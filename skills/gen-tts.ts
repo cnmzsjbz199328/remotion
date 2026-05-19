@@ -11,11 +11,11 @@ const getArg = (flag: string) => {
 const date = getArg("--date") ?? new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 const force = args.includes("--force");
 const voice = getArg("--voice") ?? process.env.MOSS_TTS_VOICE ?? "zh_1";
-const baseUrl = (process.env.MOSS_TTS_URL ?? "https://tom199328-moss-tts-nano.hf.space").replace(/\/$/, "");
+const baseUrl = (process.env.MOSS_TTS_URL ?? "https://tts.badtom.dpdns.org").replace(/\/$/, "");
 const fps = 30;
 const MAX_RETRIES = 3;
 const REQUEST_TIMEOUT_MS = 120_000;
-const CONCURRENCY = 3;
+const CONCURRENCY = 2;
 
 // Reference audio files are sourced from the MOSS-TTS-Nano GitHub repo
 const VOICE_REPO_BASE = "https://raw.githubusercontent.com/cnmzsjbz199328/MOSS-TTS-Nano/main/assets/audio";

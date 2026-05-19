@@ -1,5 +1,6 @@
 import path from "path";
 import fs from "fs";
+import http from "http";
 import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition } from "@remotion/renderer";
 import { buildTimeline, computeTotalFrames } from "../lib/timeline";
@@ -29,6 +30,33 @@ const compositionId = COMPOSITION_IDS[style] ?? "NewsVideo";
 const styleSuffix = style === "dark" ? "" : `-${style}`;
 const outputPath = path.resolve(`output/${dateArg}${styleSuffix}.mp4`);
 
+// ── Static file server ────────────────────────────────────────────────────────
+// Remotion's webpack server only serves its own bundle dir. We run a tiny
+// local HTTP server so audio files in cache/ are reachable via http://.
+
+function startStaticServer(root: string): Promise<{ baseUrl: string; close: () => void }> {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      const rel = decodeURIComponent(req.url ?? "/").replace(/^\//, "");
+      const filePath = path.join(root, rel);
+      try {
+        const stat = fs.statSync(filePath);
+        if (!stat.isFile()) { res.writeHead(404); res.end(); return; }
+        res.writeHead(200);
+        fs.createReadStream(filePath).pipe(res);
+      } catch {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address() as { port: number };
+      resolve({ baseUrl: `http://127.0.0.1:${addr.port}`, close: () => server.close() });
+    });
+    server.on("error", reject);
+  });
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -38,48 +66,55 @@ async function main() {
     process.exit(0);
   }
 
-  const inputProps: VideoInputProps = useStatic
-    ? await loadStaticProps()
-    : loadFromCache(dateArg);
+  const projectRoot = path.resolve(".");
+  const { baseUrl, close: closeServer } = await startStaticServer(projectRoot);
 
-  fs.mkdirSync("output", { recursive: true });
+  try {
+    const inputProps: VideoInputProps = useStatic
+      ? await loadStaticProps()
+      : loadFromCache(dateArg, baseUrl);
 
-  console.log(`Style: ${style} (composition: ${compositionId})`);
-  console.log("Bundling Remotion project…");
-  const serveUrl = await bundle({
-    entryPoint: path.resolve("remotion/index.tsx"),
-    webpackOverride: (config) => config,
-  });
+    fs.mkdirSync("output", { recursive: true });
 
-  const propsForRemotionApi = inputProps as unknown as Record<string, unknown>;
+    console.log(`Style: ${style} (composition: ${compositionId})`);
+    console.log("Bundling Remotion project…");
+    const serveUrl = await bundle({
+      entryPoint: path.resolve("remotion/index.tsx"),
+      webpackOverride: (config) => config,
+    });
 
-  const composition = await selectComposition({
-    serveUrl,
-    id: compositionId,
-    inputProps: propsForRemotionApi,
-  });
+    const propsForRemotionApi = inputProps as unknown as Record<string, unknown>;
 
-  console.log(
-    `Rendering ${composition.durationInFrames} frames at ${composition.fps} fps…`
-  );
+    const composition = await selectComposition({
+      serveUrl,
+      id: compositionId,
+      inputProps: propsForRemotionApi,
+    });
 
-  await renderMedia({
-    composition,
-    serveUrl,
-    codec: "h264",
-    outputLocation: outputPath,
-    inputProps: propsForRemotionApi,
-    imageFormat: "jpeg",
-    jpegQuality: 85,
-    concurrency: 4,
-    onProgress: ({ renderedFrames, progress }) => {
-      process.stdout.write(
-        `\r  ${renderedFrames} frames (${Math.round(progress * 100)}%)`
-      );
-    },
-  });
+    console.log(
+      `Rendering ${composition.durationInFrames} frames at ${composition.fps} fps…`
+    );
 
-  console.log(`\nDone → ${outputPath}`);
+    await renderMedia({
+      composition,
+      serveUrl,
+      codec: "h264",
+      outputLocation: outputPath,
+      inputProps: propsForRemotionApi,
+      imageFormat: "jpeg",
+      jpegQuality: 85,
+      concurrency: 4,
+      onProgress: ({ renderedFrames, progress }) => {
+        process.stdout.write(
+          `\r  ${renderedFrames} frames (${Math.round(progress * 100)}%)`
+        );
+      },
+    });
+
+    console.log(`\nDone → ${outputPath}`);
+  } finally {
+    closeServer();
+  }
 }
 
 // ── Data loaders ──────────────────────────────────────────────────────────────
@@ -90,7 +125,7 @@ async function loadStaticProps(): Promise<VideoInputProps> {
   return staticProps;
 }
 
-function loadFromCache(date: string): VideoInputProps {
+function loadFromCache(date: string, assetBaseUrl: string): VideoInputProps {
   const read = <T>(name: string, skill: string): T => {
     const filePath = path.resolve(`cache/${name}-${date}.json`);
     if (!fs.existsSync(filePath)) {
@@ -104,6 +139,14 @@ function loadFromCache(date: string): VideoInputProps {
   const script = read<VideoScript>("script", "gen-script");
   const ttsManifest = read<TtsManifest>("tts-manifest", "gen-tts");
   const assets = read<AssetsManifest>("assets", "collect-assets");
+
+  // Rewrite relative audioFile paths to http:// URLs served by our local static server.
+  for (const seg of ttsManifest.segments) {
+    if (seg.audioFile && !seg.audioFile.startsWith("http")) {
+      const rel = seg.audioFile.replace(/\\/g, "/").replace(/^\//, "");
+      seg.audioFile = `${assetBaseUrl}/${rel}`;
+    }
+  }
 
   const timeline = buildTimeline(ttsManifest);
   const totalFrames = computeTotalFrames(timeline);
