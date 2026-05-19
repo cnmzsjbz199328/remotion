@@ -12,12 +12,7 @@
     "resolveJsonModule": true,
     "lib": ["dom", "esnext"],
     "outDir": "dist",
-    "rootDir": ".",
-    "baseUrl": ".",
-    "paths": {
-      "remotion": ["./node_modules/remotion"],
-      "@/*": ["./*"]
-    }
+    "rootDir": "."
   },
   "include": ["remotion/**/*", "lib/**/*", "skills/**/*", "scripts/**/*"],
   "exclude": ["node_modules", "dist"]

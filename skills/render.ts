@@ -17,8 +17,17 @@ const dateArg = getArg("--date") ??
   new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 const useStatic = args.includes("--static");
 const force = args.includes("--force");
+const style = getArg("--style") ?? "dark";
 
-const outputPath = path.resolve(`output/${dateArg}.mp4`);
+const COMPOSITION_IDS: Record<string, string> = {
+  dark:   "NewsVideo",
+  bright: "NewsVideo-Bright",
+  vibe:   "NewsVideo-Vibe",
+};
+
+const compositionId = COMPOSITION_IDS[style] ?? "NewsVideo";
+const styleSuffix = style === "dark" ? "" : `-${style}`;
+const outputPath = path.resolve(`output/${dateArg}${styleSuffix}.mp4`);
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
@@ -35,6 +44,7 @@ async function main() {
 
   fs.mkdirSync("output", { recursive: true });
 
+  console.log(`Style: ${style} (composition: ${compositionId})`);
   console.log("Bundling Remotion project…");
   const serveUrl = await bundle({
     entryPoint: path.resolve("remotion/index.tsx"),
@@ -45,7 +55,7 @@ async function main() {
 
   const composition = await selectComposition({
     serveUrl,
-    id: "NewsVideo",
+    id: compositionId,
     inputProps: propsForRemotionApi,
   });
 
