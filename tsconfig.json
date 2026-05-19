@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "lib": ["dom", "esnext"],
+    "outDir": "dist",
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "remotion": ["./node_modules/remotion"],
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["remotion/**/*", "lib/**/*", "skills/**/*", "scripts/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

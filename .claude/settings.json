@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit(/.claude/skills/fetch-news/**)",
+      "Edit(/.claude/skills/gen-script/**)",
+      "Edit(/.claude/skills/gen-tts/**)",
+      "Edit(/.claude/skills/collect-assets/**)",
+      "Edit(/.claude/skills/render/**)",
+      "Bash(node -e ' *)",
+      "Bash(git init *)"
+    ]
+  }
+}
