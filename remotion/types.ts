@@ -96,6 +96,6 @@ export interface SegmentAssets {
 
 export interface AssetImage {
   file: string;
-  source: "og-image" | "pexels" | "unsplash" | "fallback";
+  source: "generated" | "og-image" | "pexels" | "unsplash" | "fallback";
   credit: string | null;
 }
