@@ -81,6 +81,7 @@ async function main() {
     const serveUrl = await bundle({
       entryPoint: path.resolve("remotion/index.tsx"),
       webpackOverride: (config) => config,
+      publicDir: path.resolve("public"),
     });
 
     const propsForRemotionApi = inputProps as unknown as Record<string, unknown>;
@@ -102,7 +103,7 @@ async function main() {
       outputLocation: outputPath,
       inputProps: propsForRemotionApi,
       imageFormat: "jpeg",
-      jpegQuality: 85,
+      jpegQuality: 95,
       concurrency: 4,
       onProgress: ({ renderedFrames, progress }) => {
         process.stdout.write(

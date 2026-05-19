@@ -10,15 +10,17 @@ const getArg = (flag: string) => {
 };
 const date = getArg("--date") ?? new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 const force = args.includes("--force");
-const voice = getArg("--voice") ?? process.env.MOSS_TTS_VOICE ?? "zh_1";
-const baseUrl = (process.env.MOSS_TTS_URL ?? "https://tts.badtom.dpdns.org").replace(/\/$/, "");
+const voice = getArg("--voice") ?? process.env.QWEN_TTS_VOICE ?? "Serena / 苏瑶";
 const fps = 30;
 const MAX_RETRIES = 3;
-const REQUEST_TIMEOUT_MS = 120_000;
+const REQUEST_TIMEOUT_MS = 180_000;
 const CONCURRENCY = 2;
 
-// Reference audio files are sourced from the MOSS-TTS-Nano GitHub repo
-const VOICE_REPO_BASE = "https://raw.githubusercontent.com/cnmzsjbz199328/MOSS-TTS-Nano/main/assets/audio";
+// ─── Qwen3-TTS Gradio API ────────────────────────────────────────────────────
+const GRADIO_BASE = (process.env.QWEN_TTS_URL ?? "https://qwen-qwen3-tts-demo.ms.show").replace(/\/$/, "");
+const GRADIO_API  = `${GRADIO_BASE}/gradio_api`;
+const GRADIO_FN   = 1; // tts_interface dependency id
+const LANGUAGE    = "Auto / 自动";
 
 // ─── Paths ───────────────────────────────────────────────────────────────────
 const scriptPath = path.join("cache", `script-${date}.json`);
@@ -46,59 +48,87 @@ interface SegmentJob {
   text: string;
 }
 
-// ─── Voice reference file ─────────────────────────────────────────────────────
-async function ensureVoiceFile(voiceId: string): Promise<string> {
-  const voiceDir = path.join("cache", "voices");
-  const voicePath = path.join(voiceDir, `${voiceId}.wav`);
-  if (fs.existsSync(voicePath)) return voicePath;
-
-  fs.mkdirSync(voiceDir, { recursive: true });
-  console.log(`  → Downloading reference voice ${voiceId}.wav from GitHub…`);
-  const res = await fetch(`${VOICE_REPO_BASE}/${voiceId}.wav`);
-  if (!res.ok) throw new Error(`Failed to download voice ${voiceId}: HTTP ${res.status}`);
-  const buf = Buffer.from(await res.arrayBuffer());
-  fs.writeFileSync(voicePath, buf);
-  console.log(`  ✓ Voice saved: ${voicePath} (${(buf.length / 1024).toFixed(0)} KB)`);
-  return voicePath;
+// ─── Qwen3-TTS API call (Gradio SSE queue) ───────────────────────────────────
+function randomHash(len = 10): string {
+  return Math.random().toString(36).slice(2, 2 + len);
 }
 
-// ─── MOSS-TTS-Nano API call ────────────────────────────────────────────────────
-async function callTTS(text: string, voicePath: string): Promise<Buffer> {
+interface GradioFileData {
+  path?: string;
+  url?: string | null;
+}
+
+async function callTTS(text: string): Promise<Buffer> {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
     try {
-      const audioBytes = fs.readFileSync(voicePath);
-      const audioBlob = new Blob([audioBytes], { type: "audio/wav" });
+      const sessionHash = randomHash();
 
-      const form = new FormData();
-      form.append("text", text);
-      form.append("demo_id", "");
-      form.append("prompt_audio", audioBlob, path.basename(voicePath));
-      form.append("enable_text_normalization", "1");
-      form.append("enable_normalize_tts_text", "1");
-
-      const res = await fetch(`${baseUrl}/api/generate`, {
+      // 1. Join queue
+      const joinRes = await fetch(`${GRADIO_API}/queue/join`, {
         method: "POST",
-        body: form,
-        signal: controller.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: [text, voice, LANGUAGE],
+          event_data: null,
+          fn_index: GRADIO_FN,
+          trigger_id: 7,
+          session_hash: sessionHash,
+        }),
+        signal: AbortSignal.timeout(15_000),
       });
-
-      clearTimeout(timer);
-
-      if (!res.ok) {
-        const msg = await res.text().catch(() => "(no body)");
-        throw new Error(`HTTP ${res.status}: ${msg}`);
+      if (!joinRes.ok) {
+        throw new Error(`queue/join HTTP ${joinRes.status}: ${await joinRes.text()}`);
       }
 
-      const json = (await res.json()) as { audio_base64?: string };
-      if (!json.audio_base64) throw new Error("Response missing audio_base64");
-      return Buffer.from(json.audio_base64, "base64");
+      // 2. Stream SSE until process_completed
+      const sseRes = await fetch(`${GRADIO_API}/queue/data?session_hash=${sessionHash}`, {
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!sseRes.ok || !sseRes.body) throw new Error(`SSE failed: ${sseRes.status}`);
+
+      const reader = sseRes.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      let fileData: GradioFileData | null = null;
+
+      outer: while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split("\n\n");
+        buf = parts.pop() ?? "";
+        for (const part of parts) {
+          const dataLine = part.split("\n").find((l) => l.startsWith("data:"));
+          if (!dataLine) continue;
+          const evt = JSON.parse(dataLine.slice(5).trim()) as {
+            msg: string;
+            output?: { data: GradioFileData[] };
+            success?: boolean;
+          };
+          if (evt.msg === "process_completed") {
+            if (!evt.success || !evt.output?.data?.[0]) {
+              throw new Error(`TTS failed: ${JSON.stringify(evt)}`);
+            }
+            fileData = evt.output.data[0];
+            break outer;
+          }
+        }
+      }
+
+      if (!fileData) throw new Error("SSE stream ended without completion");
+
+      // 3. Download the audio file
+      const audioUrl = fileData.url
+        ?? (fileData.path ? `${GRADIO_BASE}/gradio_api/file=${fileData.path}` : null);
+      if (!audioUrl) throw new Error("No audio URL in TTS response");
+
+      const dlRes = await fetch(audioUrl, { signal: AbortSignal.timeout(30_000) });
+      if (!dlRes.ok) throw new Error(`Audio download HTTP ${dlRes.status}`);
+      return Buffer.from(await dlRes.arrayBuffer());
+
     } catch (err: any) {
-      clearTimeout(timer);
       if (attempt === MAX_RETRIES) throw err;
-      const wait = attempt * 4000;
+      const wait = attempt * 5000;
       const reason = err.name === "AbortError" ? "timeout" : err.message;
       console.log(`  ⚠ Attempt ${attempt}/${MAX_RETRIES} failed (${reason}), retrying in ${wait / 1000}s…`);
       await new Promise((r) => setTimeout(r, wait));
@@ -141,7 +171,7 @@ function getDurationMs(filePath: string): number {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 async function main(): Promise<void> {
-  console.log(`[gen-tts] date=${date}  voice=${voice}  url=${baseUrl}`);
+  console.log(`[gen-tts] date=${date}  voice="${voice}"  api=${GRADIO_BASE}`);
 
   if (!fs.existsSync(scriptPath)) {
     console.error(`✗ Script not found: ${scriptPath}`);
@@ -168,12 +198,9 @@ async function main(): Promise<void> {
     { id: "outro", progressLabel: "Outro", text: script.outro.narration },
   ];
 
-  console.log(`\nProcessing ${jobs.length} segments…`);
-  console.log(`(Note: the HF Space may take up to 60s to warm up on first request)\n`);
+  console.log(`\nProcessing ${jobs.length} segments  voice="${voice}"…\n`);
 
-  const voicePath = await ensureVoiceFile(voice);
-
-  // Process segments with limited concurrency to avoid overloading the HF Space CPU instance
+  // Process segments with limited concurrency
   const results: Array<{ index: number; entry: object }> = [];
 
   async function processJob(job: SegmentJob, index: number): Promise<void> {
@@ -181,7 +208,7 @@ async function main(): Promise<void> {
     const rawPath = path.join(audioDir, `${job.id}_raw.wav`);
     const outPath = path.join(audioDir, `${job.id}.wav`);
 
-    const audioBuffer = await callTTS(job.text, voicePath);
+    const audioBuffer = await callTTS(job.text);
     fs.writeFileSync(rawPath, audioBuffer);
     console.log(`  ✓ [${job.id}] Raw WAV: ${(audioBuffer.length / 1024).toFixed(0)} KB — normalizing…`);
 
@@ -225,7 +252,7 @@ async function main(): Promise<void> {
 
   const manifest = {
     date,
-    engine: "moss-tts-nano",
+    engine: "qwen3-tts",
     voiceId: voice,
     fps,
     segments,

@@ -7,7 +7,12 @@
       "Edit(/.claude/skills/collect-assets/**)",
       "Edit(/.claude/skills/render/**)",
       "Bash(node -e ' *)",
-      "Bash(git init *)"
+      "Bash(git init *)",
+      "Bash(node --input-type=module)",
+      "Bash(npm run *)",
+      "Bash(curl -s -o nul -w \"%{http_code} %{time_total}s\" --max-time 20 \"https://huggingface.co/spaces/tom199328/MOSS-TTS-Nano\")",
+      "Bash(curl -s -L -o nul -w \"%{http_code} %{time_total}s\" --max-time 20 \"https://huggingface.co/spaces/tom199328/MOSS-TTS-Nano\")",
+      "Bash(curl -v --max-time 15 \"https://tom199328-moss-tts-nano.hf.space/\")"
     ]
   }
 }
