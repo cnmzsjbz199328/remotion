@@ -2,6 +2,7 @@ import React from "react";
 import {
   AbsoluteFill,
   Easing,
+  Img,
   interpolate,
   spring,
   useCurrentFrame,
@@ -51,9 +52,11 @@ function findBigNumber(keyPoints: string[]): BigNum | null {
 
 export const NewsSegmentSceneBright: React.FC<NewsSegmentSceneBrightProps> = ({
   segment,
+  assets,
   storyIndex,
   totalStories,
 }) => {
+  const heroImage = assets?.images?.[0] ?? null;
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
   const theme = THEMES[storyIndex % THEMES.length];
@@ -123,8 +126,39 @@ export const NewsSegmentSceneBright: React.FC<NewsSegmentSceneBrightProps> = ({
     sp((useBigNum ? 66 : 28) + i * 12, { damping: 15, stiffness: 300, mass: 0.75 })
   );
 
+  // Slow Ken-Burns pan: drift up slightly over the segment duration
+  const panProgress = interpolate(frame, [0, durationInFrames], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const imgScale  = interpolate(panProgress, [0, 1], [1.06, 1.0]);
+  const imgTransY = interpolate(panProgress, [0, 1], [0, -24]);
+
   return (
     <AbsoluteFill style={{ background: "linear-gradient(160deg, #fff8ed 0%, #ffefd4 100%)" }}>
+
+      {/* Optional photo background with Ken-Burns + frosted overlay */}
+      {heroImage && (
+        <AbsoluteFill style={{ overflow: "hidden" }}>
+          <Img
+            src={heroImage.file}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              transform: `scale(${imgScale}) translateY(${imgTransY}px)`,
+              transformOrigin: "center center",
+            }}
+          />
+          {/* Frosted overlay: keeps text readable while the image shows through */}
+          <AbsoluteFill
+            style={{
+              background: "linear-gradient(160deg, rgba(255,248,237,0.82) 0%, rgba(255,239,212,0.85) 100%)",
+              backdropFilter: "blur(2px)",
+            }}
+          />
+        </AbsoluteFill>
+      )}
 
       {/* Expanding top accent stripe */}
       <div
