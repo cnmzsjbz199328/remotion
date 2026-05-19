@@ -3,6 +3,7 @@ import { AbsoluteFill, interpolate, useCurrentFrame } from "remotion";
 
 interface IntroProps {
   date: string;
+  mascotMode?: boolean; // when true, MascotSystem owns the title — only render background
 }
 
 const formatDate = (date: string): string => {
@@ -18,7 +19,7 @@ const formatDate = (date: string): string => {
   }
 };
 
-export const IntroBright: React.FC<IntroProps> = ({ date }) => {
+export const IntroBright: React.FC<IntroProps> = ({ date, mascotMode = false }) => {
   const frame = useCurrentFrame();
 
   const opacity = interpolate(frame, [0, 30, 110, 150], [0, 1, 1, 0], {
@@ -44,33 +45,37 @@ export const IntroBright: React.FC<IntroProps> = ({ date }) => {
         opacity,
       }}
     >
-      <div
-        style={{
-          color: "#c2660a",
-          fontSize: 16,
-          letterSpacing: 8,
-          marginBottom: 24,
-          textTransform: "uppercase",
-          fontWeight: 600,
-        }}
-      >
-        AI News Daily
-      </div>
-      <div
-        style={{
-          color: "#1e293b",
-          fontSize: 60,
-          fontWeight: 700,
-          transform: `translateY(${titleY}px)`,
-        }}
-      >
-        {formatDate(date)}
-      </div>
+      {!mascotMode && (
+        <>
+          <div
+            style={{
+              color: "#c2660a",
+              fontSize: 16,
+              letterSpacing: 8,
+              marginBottom: 24,
+              textTransform: "uppercase",
+              fontWeight: 600,
+            }}
+          >
+            AI News Daily
+          </div>
+          <div
+            style={{
+              color: "#1e293b",
+              fontSize: 60,
+              fontWeight: 700,
+              transform: `translateY(${titleY}px)`,
+            }}
+          >
+            {formatDate(date)}
+          </div>
+        </>
+      )}
       <div
         style={{
           color: "#92400e",
           fontSize: 20,
-          marginTop: 20,
+          marginTop: mascotMode ? 0 : 20,
           opacity: subtitleOpacity,
           letterSpacing: 1,
         }}

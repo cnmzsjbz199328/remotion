@@ -3,10 +3,11 @@ import { AbsoluteFill, Audio, Sequence } from "remotion";
 import { TransitionSeries, linearTiming } from "@remotion/transitions";
 import { fade } from "@remotion/transitions/fade";
 import type { VideoInputProps } from "./types";
+// IntroBright kept for background/structure; title is now animated by MascotSystem
 import { IntroBright } from "./components/IntroBright";
 import { OverviewBright } from "./components/OverviewBright";
 import { NewsSegmentSceneBright } from "./components/NewsSegmentSceneBright";
-import { MascotProgressBar } from "./components/MascotProgressBar";
+import { MascotSystem } from "./components/MascotSystem";
 import { Captions } from "./components/Captions";
 import { OutroBright } from "./components/OutroBright";
 
@@ -30,7 +31,7 @@ export const NewsVideoBright: React.FC<VideoInputProps> = ({
       <AbsoluteFill style={{ background: "linear-gradient(160deg, #fff8ed 0%, #ffefd4 100%)" }} />
 
       <Sequence from={0} durationInFrames={150}>
-        <IntroBright date={script.date} />
+        <IntroBright date={script.date} mascotMode />
       </Sequence>
 
       <Sequence from={introTimeline.from} durationInFrames={introTimeline.durationInFrames}>
@@ -75,7 +76,14 @@ export const NewsVideoBright: React.FC<VideoInputProps> = ({
         <OutroBright />
       </Sequence>
 
-      <MascotProgressBar timeline={timeline} totalFrames={totalFrames} />
+      <MascotSystem
+        timeline={timeline}
+        totalFrames={totalFrames}
+        introEnd={150}
+        outroStart={outroTimeline.from}
+        introTitle="AI News Daily"
+        introDate={script.date}
+      />
     </>
   );
 };
