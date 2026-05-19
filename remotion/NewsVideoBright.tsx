@@ -6,7 +6,7 @@ import type { VideoInputProps } from "./types";
 import { IntroBright } from "./components/IntroBright";
 import { OverviewBright } from "./components/OverviewBright";
 import { NewsSegmentSceneBright } from "./components/NewsSegmentSceneBright";
-import { ProgressBar } from "./components/ProgressBar";
+import { MascotProgressBar } from "./components/MascotProgressBar";
 import { Captions } from "./components/Captions";
 import { OutroBright } from "./components/OutroBright";
 
@@ -75,7 +75,7 @@ export const NewsVideoBright: React.FC<VideoInputProps> = ({
         <OutroBright />
       </Sequence>
 
-      <ProgressBar timeline={timeline} totalFrames={totalFrames} />
+      <MascotProgressBar timeline={timeline} totalFrames={totalFrames} />
     </>
   );
 };

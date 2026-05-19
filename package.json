@@ -13,13 +13,14 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.55.0",
-    "fast-xml-parser": "^4.4.0",
     "@remotion/bundler": "^4.0.462",
     "@remotion/captions": "^4.0.0",
     "@remotion/cli": "^4.0.0",
+    "@remotion/lottie": "^4.0.462",
     "@remotion/renderer": "^4.0.0",
     "@remotion/transitions": "^4.0.0",
     "commander": "^12.0.0",
+    "fast-xml-parser": "^4.4.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "remotion": "^4.0.0"
