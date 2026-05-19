@@ -57,7 +57,13 @@ export const NewsVideo: React.FC<VideoInputProps> = ({
               <React.Fragment key={seg.newsId}>
                 <TransitionSeries.Sequence durationInFrames={tts.durationFrames}>
                   {tts.audioFile ? <Audio src={tts.audioFile} /> : null}
-                  <NewsSegmentScene segment={seg} assets={segAssets} tts={tts} />
+                  <NewsSegmentScene
+                    segment={seg}
+                    assets={segAssets}
+                    tts={tts}
+                    storyIndex={i}
+                    totalStories={script.segments.length}
+                  />
                   <Captions segment={tts} />
                 </TransitionSeries.Sequence>
                 {i < script.segments.length - 1 && (
