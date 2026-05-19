@@ -15,6 +15,7 @@ const baseUrl = (process.env.MOSS_TTS_URL ?? "https://tom199328-moss-tts-nano.hf
 const fps = 30;
 const MAX_RETRIES = 3;
 const REQUEST_TIMEOUT_MS = 120_000;
+const CONCURRENCY = 3;
 
 // Reference audio files are sourced from the MOSS-TTS-Nano GitHub repo
 const VOICE_REPO_BASE = "https://raw.githubusercontent.com/cnmzsjbz199328/MOSS-TTS-Nano/main/assets/audio";
@@ -172,40 +173,55 @@ async function main(): Promise<void> {
 
   const voicePath = await ensureVoiceFile(voice);
 
-  const segments: object[] = [];
-  let totalDurationMs = 0;
+  // Process segments with limited concurrency to avoid overloading the HF Space CPU instance
+  const results: Array<{ index: number; entry: object }> = [];
 
-  for (const job of jobs) {
-    console.log(`▶ [${job.id}] ${job.progressLabel}`);
-    console.log(`  text: ${job.text.slice(0, 60)}…`);
-
+  async function processJob(job: SegmentJob, index: number): Promise<void> {
+    console.log(`▶ [${job.id}] ${job.progressLabel} — synthesizing…`);
     const rawPath = path.join(audioDir, `${job.id}_raw.wav`);
     const outPath = path.join(audioDir, `${job.id}.wav`);
 
-    console.log(`  → Synthesizing via MOSS-TTS-Nano…`);
     const audioBuffer = await callTTS(job.text, voicePath);
     fs.writeFileSync(rawPath, audioBuffer);
-    console.log(`  ✓ Raw WAV: ${(audioBuffer.length / 1024).toFixed(0)} KB`);
+    console.log(`  ✓ [${job.id}] Raw WAV: ${(audioBuffer.length / 1024).toFixed(0)} KB — normalizing…`);
 
-    console.log(`  → Normalizing (44100Hz stereo, EBU R128 -14 LUFS)…`);
     normalizeAudio(rawPath, outPath);
-
     const durationMs = getDurationMs(outPath);
     const durationFrames = Math.ceil(durationMs / (1000 / fps)) + 2;
-    totalDurationMs += durationMs;
-    console.log(`  ✓ ${(durationMs / 1000).toFixed(2)}s → ${durationFrames} frames\n`);
+    console.log(`  ✓ [${job.id}] ${(durationMs / 1000).toFixed(2)}s → ${durationFrames} frames`);
 
-    segments.push({
-      id: job.id,
-      ...(job.newsId ? { newsId: job.newsId } : {}),
-      progressLabel: job.progressLabel,
-      audioFile: outPath.replace(/\\/g, "/"),
-      durationMs,
-      durationFrames,
-      text: job.text,
-      captions: [],
+    results.push({
+      index,
+      entry: {
+        id: job.id,
+        ...(job.newsId ? { newsId: job.newsId } : {}),
+        progressLabel: job.progressLabel,
+        audioFile: outPath.replace(/\\/g, "/"),
+        durationMs,
+        durationFrames,
+        text: job.text,
+        captions: [],
+      },
     });
   }
+
+  // Concurrency pool: run up to CONCURRENCY jobs at once
+  let cursor = 0;
+  const running = new Set<Promise<void>>();
+
+  while (cursor < jobs.length || running.size > 0) {
+    while (running.size < CONCURRENCY && cursor < jobs.length) {
+      const job = jobs[cursor];
+      const index = cursor++;
+      const p = processJob(job, index).finally(() => running.delete(p));
+      running.add(p);
+    }
+    if (running.size > 0) await Promise.race(running);
+  }
+
+  // Restore original order (results arrive out of order due to concurrency)
+  const segments = results.sort((a, b) => a.index - b.index).map((r) => r.entry);
+  const totalDurationMs = segments.reduce((sum, s: any) => sum + s.durationMs, 0);
 
   const manifest = {
     date,
