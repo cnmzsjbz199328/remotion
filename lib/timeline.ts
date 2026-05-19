@@ -1,6 +1,5 @@
 import type { TtsManifest, TimelineEntry } from "../remotion/types";
 
-const TRANSITION_FRAMES = 15;
 const INTRO_ANIM_FRAMES = 150; // 5s fixed intro animation
 
 export function buildTimeline(manifest: TtsManifest): TimelineEntry[] {
@@ -17,7 +16,6 @@ export function buildTimeline(manifest: TtsManifest): TimelineEntry[] {
         (seg.id === "intro" ? "Intro" : "Outro"),
     });
     cursor += seg.durationFrames;
-    if (seg.id !== "outro") cursor += TRANSITION_FRAMES;
   }
 
   return entries;

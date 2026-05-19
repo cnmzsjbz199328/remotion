@@ -40,6 +40,19 @@ export const NewsVideoBright: React.FC<VideoInputProps> = ({
         <Captions segment={introTts} />
       </Sequence>
 
+      {/* Audio + captions: positioned by timeline (frame-accurate, no overlap) */}
+      {storyTts.map((tts, i) => {
+        const entry = timeline[i + 1];
+        if (!tts?.audioFile || !entry) return null;
+        return (
+          <Sequence key={tts.id} from={entry.from} durationInFrames={tts.durationFrames}>
+            <Audio src={tts.audioFile} />
+            <Captions segment={tts} />
+          </Sequence>
+        );
+      })}
+
+      {/* Visuals: TransitionSeries handles fade-only, no audio */}
       <Sequence from={storiesStart}>
         <TransitionSeries>
           {script.segments.map((seg, i) => {
@@ -49,7 +62,6 @@ export const NewsVideoBright: React.FC<VideoInputProps> = ({
             return (
               <React.Fragment key={seg.newsId}>
                 <TransitionSeries.Sequence durationInFrames={tts.durationFrames}>
-                  {tts.audioFile ? <Audio src={tts.audioFile} /> : null}
                   <NewsSegmentSceneBright
                     segment={seg}
                     assets={segAssets}
@@ -57,7 +69,6 @@ export const NewsVideoBright: React.FC<VideoInputProps> = ({
                     storyIndex={i}
                     totalStories={script.segments.length}
                   />
-                  <Captions segment={tts} />
                 </TransitionSeries.Sequence>
                 {i < script.segments.length - 1 && (
                   <TransitionSeries.Transition
