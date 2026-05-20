@@ -1,6 +1,27 @@
+/**
+ * fetch-news: collect candidate AI news stories for a date and pre-filter them.
+ *
+ * Pipeline:
+ *   1. Search HackerNews (Algolia) for AI-keyword stories within the date window.
+ *   2. Classify each hit by source-domain authority (high / neutral / low /
+ *      non-article) and apply tier-specific HN-points thresholds.
+ *   3. Near-duplicate dedupe by title token overlap.
+ *   4. Fetch each surviving URL, extract article text via the hand-rolled
+ *      readability heuristic in lib/article.ts. Drop stories where extraction
+ *      fails or yields fewer than 500 characters — narration must be grounded
+ *      in real article body, not titles or abstracts (per Issue 14).
+ *   5. Mark the top items (max 5) as `selected: true` for human review.
+ *
+ * Arxiv source has been removed: it only provides abstracts and so cannot
+ * satisfy the "must have article text" requirement.
+ */
+
 import path from "path";
 import fs from "fs";
-import { XMLParser } from "fast-xml-parser";
+
+import { classifySource, hostOf, pointsFloorFor, type SourceTier } from "../lib/sources";
+import { dedupeByTitle } from "../lib/dedup";
+import { extractArticleText } from "../lib/article";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -8,26 +29,47 @@ export interface NewsItem {
   id: string;
   title: string;
   url: string;
-  source: "hackernews" | "arxiv";
-  score?: number;
-  commentCount?: number;
-  summary?: string;
-  authors?: string[];
+  source: "hackernews";
+  score: number;
+  commentCount: number;
   publishedAt: string;
+  // Populated by the source-authority classifier
+  host: string;
+  sourceTier: SourceTier;
+  // Populated by the article extraction step
+  articleText?: string;
+  articleChars?: number;
+  // Set by the selection step (top-N picks)
+  selected: boolean;
+  // Reserved for the LLM ranking step (Issue 2 / Batch B follow-up).
+  // Items keep `aiScore: null` until that step is wired in.
+  aiScore: number | null;
+  aiScoreReason: string | null;
 }
 
 export interface NewsCache {
   date: string;
   fetchedAt: string;
   items: NewsItem[];
+  droppedCounts: {
+    belowThreshold: number;
+    nonArticleHost: number;
+    duplicate: number;
+    extractionFailed: number;
+  };
 }
 
 // ── CLI args ──────────────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
-const getArg = (flag: string) => { const i = args.indexOf(flag); return i !== -1 ? args[i + 1] : undefined; };
-const date = getArg("--date") ?? new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+const getArg = (flag: string) => {
+  const i = args.indexOf(flag);
+  return i !== -1 ? args[i + 1] : undefined;
+};
+const date  = getArg("--date") ?? new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 const force = args.includes("--force");
+const MAX_SELECTED = 5;
+const EXTRACTION_CONCURRENCY = 4;
 
 const cacheFile = path.resolve(`cache/news-${date}.json`);
 
@@ -42,22 +84,86 @@ async function main() {
 
   console.log(`Fetching AI news for ${date}…`);
 
-  const [hnItems, arxivItems] = await Promise.all([
-    fetchHackerNews(date).catch(e => { console.warn(`⚠  HN fetch failed: ${e.message}`); return [] as NewsItem[]; }),
-    fetchArxiv(date).catch(e => { console.warn(`⚠  arXiv fetch failed: ${e.message}`); return [] as NewsItem[]; }),
-  ]);
+  // Step 1: HN
+  const hnRaw = await fetchHackerNews(date)
+    .catch((e) => { console.warn(`⚠  HN fetch failed: ${e.message}`); return [] as HNHit[]; });
+  console.log(`  HN raw hits: ${hnRaw.length}`);
+
+  // Step 2: Source authority + points threshold
+  const authoritative: NewsItem[] = [];
+  let belowThreshold = 0;
+  let nonArticle = 0;
+  for (const h of hnRaw) {
+    if (!h.url) continue;
+    const tier = classifySource(h.url);
+    if (tier === "non-article") { nonArticle++; continue; }
+    const floor = pointsFloorFor(tier);
+    if ((h.points ?? 0) < floor) { belowThreshold++; continue; }
+    authoritative.push({
+      id: `hn-${h.objectID}`,
+      title: h.title,
+      url: h.url,
+      source: "hackernews",
+      score: h.points ?? 0,
+      commentCount: h.num_comments ?? 0,
+      publishedAt: h.created_at,
+      host: hostOf(h.url),
+      sourceTier: tier,
+      selected: false,
+      aiScore: null,
+      aiScoreReason: null,
+    });
+  }
+  console.log(`  after authority filter: ${authoritative.length}  (dropped: ${belowThreshold} below threshold, ${nonArticle} non-article)`);
+
+  // Step 3: Dedupe near-duplicates by title
+  const deduped = dedupeByTitle(authoritative);
+  const dupCount = authoritative.length - deduped.length;
+  console.log(`  after dedupe: ${deduped.length}  (dropped: ${dupCount})`);
+
+  // Step 4: Article-text extraction in parallel batches
+  console.log(`  extracting article text (${deduped.length} URLs, concurrency=${EXTRACTION_CONCURRENCY})…`);
+  await runWithConcurrency(deduped, EXTRACTION_CONCURRENCY, async (item) => {
+    const r = await extractArticleText(item.url);
+    if (r.ok) {
+      item.articleText = r.text;
+      item.articleChars = r.charCount;
+      console.log(`    ✓ ${item.score.toString().padStart(4)} pts  ${item.host}  (${r.charCount} chars)  ${item.title.slice(0, 60)}`);
+    } else {
+      item.articleChars = r.charCount;
+      console.log(`    ✗ ${item.score.toString().padStart(4)} pts  ${item.host}  (${r.reason})  ${item.title.slice(0, 60)}`);
+    }
+  });
+  const withArticle = deduped.filter((i) => i.articleText && i.articleText.length >= 500);
+  const extractionFailed = deduped.length - withArticle.length;
+  console.log(`  with article text ≥500 chars: ${withArticle.length}  (failed: ${extractionFailed})`);
+
+  // Step 5: pre-select top N by score (LLM ranking will override later — Issue 2).
+  withArticle.sort((a, b) => b.score - a.score);
+  for (let i = 0; i < Math.min(MAX_SELECTED, withArticle.length); i++) {
+    withArticle[i].selected = true;
+  }
 
   const cache: NewsCache = {
     date,
     fetchedAt: new Date().toISOString(),
-    items: [...hnItems, ...arxivItems],
+    items: withArticle,
+    droppedCounts: {
+      belowThreshold,
+      nonArticleHost: nonArticle,
+      duplicate: dupCount,
+      extractionFailed,
+    },
   };
 
   fs.mkdirSync("cache", { recursive: true });
   fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 2), "utf-8");
 
-  console.log(`✅  ${hnItems.length} HN stories + ${arxivItems.length} arXiv papers`);
+  const selectedCount = cache.items.filter((i) => i.selected).length;
+  console.log(`✅  ${cache.items.length} stories survived (${selectedCount} pre-selected)`);
   console.log(`   → ${cacheFile}`);
+  console.log("");
+  console.log("Next: open the file, adjust `selected` flags, then run /gen-script.");
 }
 
 // ── HackerNews via Algolia ────────────────────────────────────────────────────
@@ -72,11 +178,10 @@ interface HNHit {
   created_at: string;
 }
 
-async function fetchHackerNews(date: string): Promise<NewsItem[]> {
+async function fetchHackerNews(date: string): Promise<HNHit[]> {
   const dayStart = Math.floor(new Date(`${date}T00:00:00Z`).getTime() / 1000);
-  const dayEnd = Math.floor(new Date(`${date}T23:59:59Z`).getTime() / 1000);
+  const dayEnd   = Math.floor(new Date(`${date}T23:59:59Z`).getTime() / 1000);
 
-  // Run parallel searches for individual AI keywords (Algolia treats multi-word as AND)
   const keywords = ["AI", "LLM", "OpenAI", "Anthropic", "Claude", "Gemini", "GPT", "DeepMind", "Mistral", "machine learning"];
   const seen = new Set<string>();
   const allHits: HNHit[] = [];
@@ -99,94 +204,25 @@ async function fetchHackerNews(date: string): Promise<NewsItem[]> {
     }
   }));
 
-  return allHits
-    .filter(h => h.url && (h.points ?? 0) >= 3)
-    .sort((a, b) => (b.points ?? 0) - (a.points ?? 0))
-    .slice(0, 25)
-    .map(h => ({
-      id: `hn-${h.objectID}`,
-      title: h.title,
-      url: h.url!,
-      source: "hackernews" as const,
-      score: h.points ?? 0,
-      commentCount: h.num_comments ?? 0,
-      summary: h.story_text ? stripHtml(h.story_text).slice(0, 600) : undefined,
-      publishedAt: h.created_at,
-    }));
+  return allHits;
 }
 
-// ── arXiv (cs.AI + cs.LG + cs.CL) ────────────────────────────────────────────
+// ── Concurrency helper ────────────────────────────────────────────────────────
 
-async function fetchArxiv(date: string): Promise<NewsItem[]> {
-  const query = "cat:cs.AI OR cat:cs.LG OR cat:cs.CL";
-  const url =
-    `https://export.arxiv.org/api/query` +
-    `?search_query=${encodeURIComponent(query)}` +
-    `&sortBy=submittedDate&sortOrder=descending&max_results=40`;
-
-  let res = await fetch(url);
-  if (res.status === 429) {
-    await new Promise(r => setTimeout(r, 5000));
-    res = await fetch(url);
-  }
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const xml = await res.text();
-
-  const parser = new XMLParser({ ignoreAttributes: false, isArray: (name) => name === "entry" || name === "author" });
-  const parsed = parser.parse(xml) as ArxivFeed;
-  const entries = parsed?.feed?.entry ?? [];
-
-  // Accept papers from the target date or the day before (arXiv batches submissions)
-  const prev = new Date(new Date(`${date}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10);
-  const accept = new Set([date, prev]);
-
-  return entries
-    .filter(e => accept.has((e.published ?? "").slice(0, 10)))
-    .slice(0, 15)
-    .map(e => {
-      const rawId = (e.id ?? "").split("/abs/").pop() ?? e.id ?? "";
-      const authors = (e.author ?? []).map(a => a.name).filter(Boolean).slice(0, 3);
-      return {
-        id: `arxiv-${rawId}`,
-        title: normaliseWhitespace(e.title ?? ""),
-        url: (e.id ?? "").trim(),
-        source: "arxiv" as const,
-        summary: normaliseWhitespace(e.summary ?? "").slice(0, 600),
-        authors,
-        publishedAt: e.published ?? date,
-      };
-    });
-}
-
-interface ArxivFeed {
-  feed?: {
-    entry?: ArxivEntry[];
-  };
-}
-
-interface ArxivEntry {
-  id?: string;
-  title?: string;
-  summary?: string;
-  author?: { name: string }[];
-  published?: string;
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function stripHtml(html: string): string {
-  return html
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&#x27;/g, "'")
-    .replace(/&quot;/g, '"')
-    .trim();
-}
-
-function normaliseWhitespace(s: string): string {
-  return s.replace(/\s+/g, " ").trim();
+async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  const queue = [...items];
+  const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+    while (queue.length) {
+      const it = queue.shift();
+      if (it === undefined) break;
+      await fn(it);
+    }
+  });
+  await Promise.all(workers);
 }
 
 // ── Run ───────────────────────────────────────────────────────────────────────
