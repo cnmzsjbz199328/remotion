@@ -14,7 +14,10 @@ const voice = getArg("--voice") ?? process.env.QWEN_TTS_VOICE ?? "Serena / 苏�
 const fps = 30;
 const MAX_RETRIES = 3;
 const REQUEST_TIMEOUT_MS = 180_000;
-const CONCURRENCY = 2;
+// The public Qwen3 Gradio endpoint is flaky under parallel requests (Issue 4).
+// Sequential calls are slower but far more reliable. Override with
+// QWEN_TTS_CONCURRENCY env var when using a self-hosted / paid endpoint.
+const CONCURRENCY = Number(process.env.QWEN_TTS_CONCURRENCY ?? 1);
 
 // ─── Qwen3-TTS Gradio API ────────────────────────────────────────────────────
 const GRADIO_BASE = (process.env.QWEN_TTS_URL ?? "https://qwen-qwen3-tts-demo.ms.show").replace(/\/$/, "");
