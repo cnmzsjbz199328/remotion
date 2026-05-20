@@ -132,11 +132,25 @@ function loadFromCache(date: string, assetBaseUrl: string): VideoInputProps {
   const ttsManifest = read<TtsManifest>("tts-manifest", "gen-tts");
   const assets = read<AssetsManifest>("assets", "collect-assets");
 
-  // Rewrite relative audioFile paths to http:// URLs served by our local static server.
+  // Rewrite local file paths to http:// URLs served by our local static server.
+  // Remotion's Chromium refuses file:/// URLs ("Not allowed to load local resource").
+  const projectRootFwd = path.resolve(".").replace(/\\/g, "/");
+  const toHttp = (p: string): string => {
+    if (!p || p.startsWith("http")) return p;
+    let s = p.replace(/\\/g, "/");
+    if (s.toLowerCase().startsWith(projectRootFwd.toLowerCase())) {
+      s = s.slice(projectRootFwd.length);
+    }
+    s = s.replace(/^\//, "");
+    return `${assetBaseUrl}/${s}`;
+  };
+
   for (const seg of ttsManifest.segments) {
-    if (seg.audioFile && !seg.audioFile.startsWith("http")) {
-      const rel = seg.audioFile.replace(/\\/g, "/").replace(/^\//, "");
-      seg.audioFile = `${assetBaseUrl}/${rel}`;
+    if (seg.audioFile) seg.audioFile = toHttp(seg.audioFile);
+  }
+  for (const seg of assets.segments) {
+    for (const img of seg.images ?? []) {
+      if (img?.file) img.file = toHttp(img.file);
     }
   }
 
