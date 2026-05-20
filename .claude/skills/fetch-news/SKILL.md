@@ -1,6 +1,6 @@
 ---
 name: fetch-news
-description: Fetches AI news candidates from HackerNews for the specified date, classifies each by source-domain authority, near-duplicates dedupes them, fetches each URL and extracts the article body, then pre-selects the top items. Writes a reviewable list to cache/news-{date}.json. Use when the user wants to collect today's or yesterday's AI news, start the video pipeline, or refresh the story selection for a given date.
+description: Fetches AI news candidates from HackerNews for the specified date, classifies each by source-domain authority, near-duplicates dedupes them, fetches each URL and extracts the article body, then pre-selects the top items by HN score. Writes a reviewable list to cache/news-{date}.json. The AI assistant invoking this skill is expected to review the candidates and toggle `selected` flags based on actual story quality — no LLM API is called by the script itself.
 argument-hint: [YYYY-MM-DD]
 ---
 
@@ -45,9 +45,26 @@ be added later; they're not implemented today.
    hand-rolled readability heuristic in [lib/article.ts](../../../lib/article.ts).
    Items where extraction fails or yields fewer than 500 characters are
    dropped. Paywalled / 404 / non-HTML pages all fall out here.
-5. **Pre-select** the top 5 by HN score as `selected: true`. The
-   provider-agnostic LLM ranking step that should override this selection is
-   not yet implemented — once it is, it replaces step 5.
+5. **Pre-select** the top 5 by HN score as `selected: true`. This is a crude
+   ordering — HN votes are noisy and a high-vote story can still be off-topic
+   (e.g. a CEO booed at a commencement) while a quietly-upvoted Nature paper
+   may be the real news of the day.
+
+## Review checkpoint — done by the AI assistant, not the script
+
+After the script writes `cache/news-{date}.json`, the AI assistant (Claude
+Code, GPT-CLI, Gemini-CLI, …) reviews the surviving candidates and edits the
+file:
+
+- For each item, judge based on (a) AI-relevance, (b) factual substance
+  vs. promotional / personal-opinion content, (c) freshness, (d) overlap
+  with another already-selected story.
+- Toggle `selected: true` / `false` to land on 3–5 picks.
+- Optionally record reasoning in `aiScoreReason` (already a reserved field
+  on every item) so the choice is auditable later.
+
+This is the LLM step — there is no separate API call. The intelligence is the
+CLI assistant itself.
 
 ## What it produces
 

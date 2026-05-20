@@ -8,7 +8,7 @@ This is a **greenfield project**. The only file currently present is `AI_NEWS_VI
 
 ## What This Project Is
 
-An automated AI news video generator. The pipeline ingests daily AI news, generates a narrated script via Claude, synthesises TTS audio, collects images, and renders a structured MP4 using Remotion (a React-based programmatic video framework).
+An automated AI news video generator. The pipeline ingests daily AI news, the AI assistant running the pipeline (Claude Code, GPT-CLI, Gemini-CLI, …) writes a narrated script, then deterministic scripts synthesise TTS audio, collect images, and render a structured MP4 using Remotion (a React-based programmatic video framework).
 
 ## Architecture: Skill-Based Pipeline
 
@@ -81,7 +81,16 @@ All Skills use `tsx` (TypeScript execution via `npx tsx`). No separate build ste
 
 **`render` Skill**: Must validate that all referenced audio and image files exist on disk before invoking Remotion. On failure, the error message must name the exact Skill to re-run.
 
-**Claude API calls** (in `fetch-news` and `gen-script`): Always use `cache_control: { type: 'ephemeral' }` on the system prompt to enable Prompt Caching and reduce cost on repeated runs.
+**No LLM API calls in skill scripts.** The cognitive work in this pipeline —
+ranking news candidates, summarising articles into Chinese narration, picking
+progress labels — is done by the AI assistant that invokes the skills (Claude
+Code, GPT-CLI, Gemini-CLI, etc.) using its own session. The `skills/*.ts`
+files are intentionally deterministic plumbing: HTTP fetching, dedup, article
+extraction, TTS, render. `gen-script.ts` validates inputs and writes a stub
+script; the assistant then edits the stub with its Edit/Write tools.
+
+That's why nothing in `skills/` or `lib/` imports an LLM SDK and why CLAUDE.md
+and SKILL.md descriptions avoid naming a specific vendor.
 
 **Image sourcing priority**: og:image from article → scraped first large image → Pexels keyword search → solid-colour placeholder (marked `source: "fallback"` in the manifest, not an error).
 
