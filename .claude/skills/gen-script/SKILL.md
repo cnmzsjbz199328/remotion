@@ -1,32 +1,46 @@
 ---
 name: gen-script
-description: Read cache/news-insights-{date}.json and write cache/script-{date}.json — the day's full video narration script. Fixed intro/outro narration come from lib/narration-constants.ts; per-segment narration is written by the AI assistant based on each insight's `summary`. This is a pure-markdown skill — no Node script runs.
+description: Read cache/news-insights-{date}.json, WebFetch the primary article URL for each insight marked `selected: true`, and write cache/script-{date}.json — the day's full video narration script. Fixed intro/outro narration come from lib/narration-constants.ts. This is the DEEP phase of the pipeline — the calling AI assistant fetches each selected article, summarises it into Chinese narration, and writes the script directly.
 argument-hint: [YYYY-MM-DD]
 ---
 
 # gen-script
 
-Generate the day's video narration script from the curated AI insights.
+Generate the day's video narration script from the user-selected AI insights.
 
-This skill has no `.ts` implementation. All cognitive work — turning each
-insight into a 180–260 字 Chinese segment, choosing a tight `progressLabel`,
-drafting a transition sentence, picking 3 key points — is done by the AI
-assistant that invoked the skill via its Read / Write / Edit tools.
+This skill has no `.ts` implementation. All cognitive work — fetching the
+article body, turning each insight into a 180–260 字 Chinese segment,
+choosing a tight `progressLabel`, drafting a transition sentence, picking 3
+key points — is done by the AI assistant that invoked the skill via its
+Read / WebFetch / Write / Edit tools.
+
+## Two-phase pipeline — this is the DEEP phase
+
+`/fetch-ai-insights` produced a lightweight shortlist (topic + significance
++ source URLs, no article body, no narration). The user then toggled
+`selected: true` on the 3–5 candidates they want in the video. Now this
+skill does the heavy work that was deferred: fetch each selected article,
+write the Chinese narration grounded in the real article text.
 
 ## When to invoke
 
-After `/fetch-ai-insights` has produced `cache/news-insights-{date}.json` and
-the user has signed off on the insight list.
+After `/fetch-ai-insights` and after the user has marked ≥3 candidates
+`selected: true`.
 
 ## Pre-flight
 
 1. Resolve the target date (`YYYY-MM-DD`, defaults to yesterday).
 2. Read `cache/news-insights-{date}.json`.
    - If it's missing → tell the user to run `/fetch-ai-insights` first.
-   - If `insights.length < 3` → tell the user; ask if they want to go back
-     and add more.
+   - Filter to `selected: true`. If fewer than 3 → tell the user to pick
+     more candidates and re-run.
 3. Check whether `cache/script-{date}.json` already exists. If yes and the
    user didn't say `--force`, stop and tell them.
+4. For each selected insight, WebFetch `sourceUrls[0]` to retrieve the
+   article body. If it fails (paywall, 404, redirect), try `sourceUrls[1]`,
+   then `[2]`, etc. If none of the sources yield ≥500 字 of usable text,
+   tell the user that insight needs to be replaced or its sources fixed,
+   and stop.
 
 ## Output schema
 
@@ -98,13 +112,18 @@ If any match, rewrite the offending sentence into a plain factual statement.
 
 ## Source of fact
 
-The only source of fact is each insight's `summary` field plus optionally the
-`significance` field as background. Do NOT consult `sourceUrls` again, do NOT
-re-search the web, do NOT add knowledge not present in the insight.
+The source of fact for each segment's narration is the **article body
+fetched in step 4 of pre-flight** — not the `topic`, not the `significance`,
+not your memory. The `significance` field is useful only as a sanity check
+("did I pick the right angle?"), not as the body of the narration.
 
-If a summary is too thin to expand into 180+ 汉字, that's a signal the insight
-itself was under-cooked — go back to `/fetch-ai-insights --force` and improve
-the summary, don't paper over it with filler.
+If WebFetch yields a clean article body but it's in English / another
+language, translate the facts into Chinese as you summarise — do NOT
+machine-paste machine-translated text.
+
+If WebFetch repeatedly fails for a selected insight, that's a signal the
+insight's sources are weak. Tell the user, suggest swapping the selection,
+and stop. Do not invent facts to fill the gap.
 
 ## TTS-safety
 

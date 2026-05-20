@@ -13,10 +13,13 @@ Reference for all four JSON files produced by the pipeline skills. All files are
 
 ## news-insights-{date}.json
 
-Output of the `/fetch-ai-insights` skill. The AI assistant invoking the skill
-runs WebSearch across four tiers (frontier labs / Chinese platforms /
-infrastructure / catch-all), cross-references each candidate against ≥2
-authoritative sources, and writes 3–5 high-impact insights.
+Output of `/fetch-ai-insights` (the FAST phase). The AI assistant invoking
+the skill runs WebSearch across four tiers (frontier labs / Chinese
+platforms / infrastructure / catch-all), cross-references each candidate
+against ≥2 authoritative sources, and writes a 6–10-candidate shortlist
+sorted by `impactScore` descending. No article body is fetched here — that's
+deferred to `/gen-script` so the deep-fetch budget is only spent on
+candidates the user actually picks.
 
 ```typescript
 {
@@ -26,14 +29,17 @@ authoritative sources, and writes 3–5 high-impact insights.
   insights: {
     id: string;                  // kebab-case, e.g. "insight-google-io-2026"
     topic: string;               // Chinese headline (≤30 字)
-    significance: string;        // 1-2 Chinese sentences — the deep "why"
+    significance: string;        // 1-2 Chinese sentences (≈30–60 字) — the "why"
     impactScore: number;         // 1-10 (see fetch-ai-insights SKILL.md rubric)
     sourceUrls: string[];        // ≥2 authoritative URLs
     category: "model-release" | "industry-shift" | "research-breakthrough" | "policy";
-    summary: string;             // 100–200 汉字 factual body — feeds gen-script directly
+    selected: boolean;           // user toggles to true on 3–5 winners before /gen-script
   }[];
 }
 ```
+
+`/gen-script` reads this file, filters to `selected: true`, WebFetches each
+`sourceUrls[0]` to get the article body, and writes the narration script.
 
 ---
 
