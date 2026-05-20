@@ -4,36 +4,33 @@ Reference for all four JSON files produced by the pipeline skills. All files are
 
 ## Contents
 
-- [news-{date}.json](#news-datejson)
+- [news-insights-{date}.json](#news-insights-datejson)
 - [script-{date}.json](#script-datejson)
 - [tts-manifest-{date}.json](#tts-manifest-datejson)
 - [assets-{date}.json](#assets-datejson)
 
 ---
 
-## news-{date}.json
+## news-insights-{date}.json
 
-Output of `fetch-news`. Set `"selected": false` to exclude a story from the script.
+Output of the `/fetch-ai-insights` skill. The AI assistant invoking the skill
+runs WebSearch across four tiers (frontier labs / Chinese platforms /
+infrastructure / catch-all), cross-references each candidate against ≥2
+authoritative sources, and writes 3–5 high-impact insights.
 
 ```typescript
 {
-  date: string;
-  generatedAt: string;       // ISO 8601
-  source: string;            // "fetch-news@1.0"
-  items: {
-    id: string;              // "hn-12345678" | "arxiv-2401.00001" etc.
-    rank: number;            // Claude ranking (1 = most important)
-    aiScore: number;         // importance score 1–10
-    aiScoreReason: string;
-    title: string;
-    url: string;
-    source: string;          // "HackerNews" | "arXiv" | "ProductHunt" | ...
-    publishedAt: string;     // ISO 8601
-    hnPoints?: number;
-    excerpt?: string;
-    imageUrl?: string | null; // og:image — edit to supply a better URL
-    category: "model-release" | "research" | "product" | "policy";
-    selected: boolean;        // ← set false to exclude
+  date: string;                  // "2026-05-20"
+  fetchedAt: string;             // ISO 8601
+  method: "ai-search-synthesis";
+  insights: {
+    id: string;                  // kebab-case, e.g. "insight-google-io-2026"
+    topic: string;               // Chinese headline (≤30 字)
+    significance: string;        // 1-2 Chinese sentences — the deep "why"
+    impactScore: number;         // 1-10 (see fetch-ai-insights SKILL.md rubric)
+    sourceUrls: string[];        // ≥2 authoritative URLs
+    category: "model-release" | "industry-shift" | "research-breakthrough" | "policy";
+    summary: string;             // 100–200 汉字 factual body — feeds gen-script directly
   }[];
 }
 ```

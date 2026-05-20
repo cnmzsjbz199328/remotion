@@ -12,21 +12,30 @@ An automated AI news video generator. The pipeline ingests daily AI news, the AI
 
 ## Architecture: Skill-Based Pipeline
 
-The project is built as **six independent Skills**, not a monolithic pipeline. Each Skill:
-- reads from and writes to a dated JSON file in `cache/`
-- can be run individually with `--date` and `--force` flags
-- is idempotent (re-running with the same input skips already-cached work)
+The project is built as **independent Skills**, not a monolithic pipeline.
+Two kinds of skills coexist:
+
+- **AI-driven skills (`.md` only, no `.ts`)** — the cognitive work is done by
+  the calling AI assistant (Claude Code / GPT-CLI / Gemini-CLI) using its own
+  WebSearch, Read, Write, and Edit tools. The skill is just a SKILL.md
+  instruction sheet, invoked as a slash command. No `npm run` entry.
+- **Deterministic skills (`.ts`)** — wrappers around tools the assistant
+  can't do itself: TTS APIs, ffmpeg, ffprobe, Remotion bundler/renderer,
+  filesystem scans, upload SDKs. Invoked via `npm run <skill> -- --date X`.
 
 ```
-skills/fetch-news.ts      →  cache/news-{date}.json
-skills/gen-script.ts      →  cache/script-{date}.json
-skills/gen-tts.ts         →  cache/tts/{date}/*.mp3  +  cache/tts-manifest-{date}.json
-skills/collect-assets.ts  →  cache/assets-{date}.json
-skills/render.ts          →  output/{date}.mp4
-skills/publish.ts         →  YouTube / Bilibili
+.claude/skills/fetch-ai-insights/SKILL.md  →  cache/news-insights-{date}.json   (AI-driven, WebSearch)
+.claude/skills/gen-script/SKILL.md         →  cache/script-{date}.json          (AI-driven, Edit/Write)
+skills/gen-tts.ts                          →  cache/tts/{date}/*.wav + tts-manifest-{date}.json
+skills/collect-assets.ts                   →  cache/assets-{date}.json
+skills/render.ts                           →  output/{date}.mp4
+skills/publish.ts                          →  YouTube / Bilibili / WeChat
 ```
 
-Human review is expected between `fetch-news` → `gen-script` (story selection) and `gen-script` → `gen-tts` (narration copy). The cache JSON files are designed to be edited by hand.
+The natural review checkpoints are between `fetch-ai-insights` →
+`gen-script` (does the insight list look right?) and `gen-script` →
+`gen-tts` (does the narration read well?). All cache JSON files are
+designed to be edited by hand.
 
 ## Remotion's Role
 
@@ -59,19 +68,23 @@ The `+2` frame buffer prevents audio cut-off. Never hardcode segment durations.
 # Remotion Studio (live preview during component development)
 npm run studio
 
-# Run individual Skills
-npm run fetch-news -- --date 2026-05-19
-npm run gen-script -- --date 2026-05-19
-npm run gen-tts    -- --date 2026-05-19
-npm run collect-assets -- --date 2026-05-19
-npm run render     -- --date 2026-05-19
-npm run publish    -- --date 2026-05-19 --platforms youtube --dry-run
+# AI-driven skills — invoked as slash commands by the operator's CLI assistant
+#   /fetch-ai-insights 2026-05-19
+#   /gen-script 2026-05-19
 
-# Force re-run a Skill (ignore existing cache)
-npm run gen-script -- --date 2026-05-19 --force
+# Deterministic skills — runnable via npm
+npm run gen-tts        -- --date 2026-05-19
+npm run collect-assets -- --date 2026-05-19
+npm run render         -- --date 2026-05-19
+npm run publish        -- --date 2026-05-19 --platforms youtube --dry-run
+
+# Force re-run (ignore existing cache)
+npm run gen-tts -- --date 2026-05-19 --force
 ```
 
-All Skills use `tsx` (TypeScript execution via `npx tsx`). No separate build step is needed for development.
+Deterministic skills use `tsx` (TypeScript execution via `npx tsx`). No
+separate build step is needed for development. AI-driven skills have no
+runtime — they're SKILL.md instruction sheets only.
 
 ## Key Implementation Constraints
 
@@ -81,16 +94,17 @@ All Skills use `tsx` (TypeScript execution via `npx tsx`). No separate build ste
 
 **`render` Skill**: Must validate that all referenced audio and image files exist on disk before invoking Remotion. On failure, the error message must name the exact Skill to re-run.
 
-**No LLM API calls in skill scripts.** The cognitive work in this pipeline —
-ranking news candidates, summarising articles into Chinese narration, picking
-progress labels — is done by the AI assistant that invokes the skills (Claude
-Code, GPT-CLI, Gemini-CLI, etc.) using its own session. The `skills/*.ts`
-files are intentionally deterministic plumbing: HTTP fetching, dedup, article
-extraction, TTS, render. `gen-script.ts` validates inputs and writes a stub
-script; the assistant then edits the stub with its Edit/Write tools.
+**No LLM API calls anywhere in the codebase.** The cognitive work — finding
+authoritative AI news, summarising into Chinese narration, picking progress
+labels — is done by the AI assistant that invokes the skills (Claude Code /
+GPT-CLI / Gemini-CLI / …) using its own session and WebSearch / WebFetch /
+Read / Write / Edit tools. The `skills/*.ts` files are intentionally
+deterministic plumbing only: TTS API + ffmpeg + ffprobe, filesystem scan,
+Remotion render, upload SDKs.
 
-That's why nothing in `skills/` or `lib/` imports an LLM SDK and why CLAUDE.md
-and SKILL.md descriptions avoid naming a specific vendor.
+That's why nothing in `skills/`, `lib/`, or `package.json` references an LLM
+SDK, and why CLAUDE.md and SKILL.md descriptions avoid naming a specific
+vendor.
 
 **Image sourcing priority**: og:image from article → scraped first large image → Pexels keyword search → solid-colour placeholder (marked `source: "fallback"` in the manifest, not an error).
 

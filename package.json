@@ -4,15 +4,12 @@
   "private": true,
   "scripts": {
     "studio": "remotion studio remotion/index.tsx",
-    "fetch-news": "tsx skills/fetch-news.ts",
-    "gen-script": "tsx skills/gen-script.ts",
     "gen-tts": "tsx skills/gen-tts.ts",
     "collect-assets": "tsx skills/collect-assets.ts",
     "render": "tsx skills/render.ts",
     "publish": "tsx skills/publish.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.55.0",
     "@remotion/bundler": "^4.0.462",
     "@remotion/captions": "^4.0.0",
     "@remotion/cli": "^4.0.0",
