@@ -34,6 +34,19 @@ Remotion is the video renderer. Its only job is: **given a `VideoInputProps` obj
 
 The `VideoInputProps` type in `remotion/types.ts` is the contract between the pipeline and the Remotion components. Any change to the cache file schemas must be reflected there.
 
+## Visual Style
+
+There is **one composition** — `NewsVideo` in `remotion/NewsVideo.tsx`. Earlier "dark" and "vibe" variants have been removed; do not reintroduce style branches without explicit direction.
+
+- **Palette**: warm light cards on a `#fff8ed → #ffefd4` gradient. Per-story accent colors live in `THEMES` in `remotion/components/NewsSegmentScene.tsx`.
+- **Mascot**: `remotion/components/MascotSystem.tsx` owns three roles for the same Lottie horse (`remotion/assets/horse-walk.json`):
+  1. **Intro** — gallops in from the right (mirrored via `scaleX(-1)`), pauses center under the title, then shrinks to the bottom-left corner of the progress bar.
+  2. **Progress** — walks left→right along the bottom bar through all story segments, position derived from `frame / totalFrames`.
+  3. **Outro** — leaps from the progress bar back to center, grows, and breathes (sine-wave Y offset).
+  The mascot also renders the intro title text — when `mascotMode` is true, `Intro.tsx` only paints the background.
+- **Background music**: `public/bgm.wav` plays at `volume={0.18}` for the entire video as a single top-level `<Audio>` element in `NewsVideo.tsx`. The file was derived from "Happy Pride month.m4a" via `ffmpeg loudnorm=I=-20`. There are no per-segment transition SFX — the 2-second gaps between segments are intentional silence over BGM.
+- **`progressLabel`** drives the chapter labels in the progress bar and is truncated to 16 characters there. Keep gen-script output ≤16 characters per label.
+
 Audio-video sync is achieved by calculating `durationInFrames` from the TTS audio duration measured by `ffprobe`:
 ```
 durationInFrames = Math.ceil(durationMs / (1000 / fps)) + 2

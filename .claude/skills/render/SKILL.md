@@ -9,6 +9,12 @@ disable-model-invocation: true
 
 Renders the final MP4 for the specified date (defaults to yesterday).
 
+The video uses a single composition (`NewsVideo`) with a warm light-card visual style,
+a Lottie mascot ([remotion/assets/horse-walk.json](../../../remotion/assets/horse-walk.json))
+that gallops in for the intro, walks along a bottom progress bar through the story
+segments, and leaps to center for the outro. Background music ([public/bgm.wav](../../../public/bgm.wav))
+plays at volume 0.18 for the full video.
+
 ## Usage
 
 ```bash

@@ -8,7 +8,7 @@ import horseWalkData from "../assets/horse-walk.json";
 interface MascotSystemProps {
   timeline: TimelineEntry[];
   totalFrames: number;
-  introEnd: number;    // frame where intro horse finishes shrinking to corner (= end of IntroBright)
+  introEnd: number;    // frame where intro horse finishes shrinking to corner (= end of Intro)
   outroStart: number;  // frame where outro horse leaps to center (= outroTimeline.from)
   introTitle?: string;
   introDate?: string;

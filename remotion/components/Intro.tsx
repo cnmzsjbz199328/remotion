@@ -3,6 +3,7 @@ import { AbsoluteFill, interpolate, useCurrentFrame } from "remotion";
 
 interface IntroProps {
   date: string;
+  mascotMode?: boolean; // when true, MascotSystem owns the title — only render background
 }
 
 const formatDate = (date: string): string => {
@@ -18,7 +19,7 @@ const formatDate = (date: string): string => {
   }
 };
 
-export const Intro: React.FC<IntroProps> = ({ date }) => {
+export const Intro: React.FC<IntroProps> = ({ date, mascotMode = false }) => {
   const frame = useCurrentFrame();
 
   const opacity = interpolate(frame, [0, 30, 110, 150], [0, 1, 1, 0], {
@@ -37,41 +38,44 @@ export const Intro: React.FC<IntroProps> = ({ date }) => {
   return (
     <AbsoluteFill
       style={{
-        background: "linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 100%)",
+        background: "linear-gradient(160deg, #fff8ed 0%, #ffefd4 50%, #fff8ed 100%)",
         alignItems: "center",
         justifyContent: "center",
         flexDirection: "column",
         opacity,
       }}
     >
+      {!mascotMode && (
+        <>
+          <div
+            style={{
+              color: "#c2660a",
+              fontSize: 16,
+              letterSpacing: 8,
+              marginBottom: 24,
+              textTransform: "uppercase",
+              fontWeight: 600,
+            }}
+          >
+            AI News Daily
+          </div>
+          <div
+            style={{
+              color: "#1e293b",
+              fontSize: 60,
+              fontWeight: 700,
+              transform: `translateY(${titleY}px)`,
+            }}
+          >
+            {formatDate(date)}
+          </div>
+        </>
+      )}
       <div
         style={{
-          color: "#60a5fa",
-          fontSize: 16,
-          letterSpacing: 8,
-          marginBottom: 24,
-          textTransform: "uppercase",
-          fontWeight: 500,
-        }}
-      >
-        AI News Daily
-      </div>
-      <div
-        style={{
-          color: "#fff",
-          fontSize: 60,
-          fontWeight: 700,
-          transform: `translateY(${titleY}px)`,
-          textShadow: "0 4px 24px rgba(0,0,0,0.5)",
-        }}
-      >
-        {formatDate(date)}
-      </div>
-      <div
-        style={{
-          color: "#6b7280",
+          color: "#92400e",
           fontSize: 20,
-          marginTop: 20,
+          marginTop: mascotMode ? 0 : 20,
           opacity: subtitleOpacity,
           letterSpacing: 1,
         }}

@@ -17,7 +17,7 @@ export const Overview: React.FC<OverviewProps> = ({ intro }) => {
   return (
     <AbsoluteFill
       style={{
-        background: "linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 100%)",
+        background: "linear-gradient(160deg, #fff8ed 0%, #ffefd4 50%, #fff8ed 100%)",
         padding: "80px 120px",
         flexDirection: "column",
         justifyContent: "center",
@@ -25,7 +25,7 @@ export const Overview: React.FC<OverviewProps> = ({ intro }) => {
     >
       <div
         style={{
-          color: "#60a5fa",
+          color: "#c2660a",
           fontSize: 13,
           letterSpacing: 5,
           marginBottom: 40,
@@ -63,7 +63,7 @@ export const Overview: React.FC<OverviewProps> = ({ intro }) => {
               style={{
                 minWidth: 34,
                 height: 34,
-                background: "rgba(59,130,246,0.9)",
+                background: "#d97706",
                 borderRadius: "50%",
                 display: "flex",
                 alignItems: "center",
@@ -80,7 +80,7 @@ export const Overview: React.FC<OverviewProps> = ({ intro }) => {
             </div>
             <div
               style={{
-                color: "#e5e7eb",
+                color: "#1e293b",
                 fontSize: 24,
                 lineHeight: 1.4,
               }}

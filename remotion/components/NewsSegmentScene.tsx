@@ -2,6 +2,7 @@ import React from "react";
 import {
   AbsoluteFill,
   Easing,
+  Img,
   interpolate,
   spring,
   useCurrentFrame,
@@ -9,132 +10,119 @@ import {
 } from "remotion";
 import type { NewsSegment, SegmentAssets, TtsSegment } from "../types";
 
-// Per-story color themes — assigned by storyIndex mod 5
+// Light card palette — one tint per story
 const THEMES = [
-  { accent: "#ef4444", r: 239, g: 68,  b: 68  },  // 0 red      — legal/controversy
-  { accent: "#10b981", r: 16,  g: 185, b: 129 },  // 1 emerald  — deals/growth
-  { accent: "#f59e0b", r: 245, g: 158, b: 11  },  // 2 amber    — corporate/industry
-  { accent: "#8b5cf6", r: 139, g: 92,  b: 246 },  // 3 violet   — culture/policy
-  { accent: "#3b82f6", r: 59,  g: 130, b: 246 },  // 4 blue     — tech/model
+  { accent: "#ef4444", r: 239, g: 68,  b: 68  },
+  { accent: "#10b981", r: 16,  g: 185, b: 129 },
+  { accent: "#f59e0b", r: 245, g: 158, b: 11  },
+  { accent: "#8b5cf6", r: 139, g: 92,  b: 246 },
+  { accent: "#3b82f6", r: 59,  g: 130, b: 246 },
 ];
+
+// Split-layout constants (px, for 1920-wide canvas)
+const IMG_PANEL_W  = 820;  // left photo panel width
+const CONTENT_LEFT_SPLIT = 900;  // content area left edge when image present
 
 export interface NewsSegmentSceneProps {
   segment: NewsSegment;
-  assets: SegmentAssets;   // kept for future image use; not rendered in this phase
+  assets: SegmentAssets;
   tts: TtsSegment;
-  storyIndex: number;      // 0-based position in the story list
+  storyIndex: number;
   totalStories: number;
 }
 
-// ── Big-number detection ──────────────────────────────────────────────────────
-
 interface BigNum {
-  display: string;       // e.g. "7,000" or "$65B"
-  numericValue: number;  // raw number for counting
-  shouldCount: boolean;  // only count up when no B/M/K suffix and ≤ 100,000
-  context: string;       // remainder of the key-point after the number is removed
-  kpIndex: number;       // index in keyPoints array
+  display: string;
+  numericValue: number;
+  shouldCount: boolean;
+  context: string;
+  kpIndex: number;
 }
 
 function findBigNumber(keyPoints: string[]): BigNum | null {
   for (let i = 0; i < keyPoints.length; i++) {
     const kp = keyPoints[i];
-    // Match optional $, digits-with-commas, optional B/M/K suffix
     const m = kp.match(/(\$?)([\d,]+(?:\.\d+)?)(\s*[BMKbmk])?/);
     if (!m) continue;
     const raw = parseFloat(m[2].replace(/,/g, ""));
     const suffix = m[3] ? m[3].trim().charAt(0).toUpperCase() : "";
-    if (raw < 100 && !suffix) continue; // skip small incidental numbers
+    if (raw < 100 && !suffix) continue;
     const display = `${m[1]}${m[2]}${suffix}`;
     const context = kp.replace(m[0], "").replace(/^[\s\-–—,]+/, "").trim();
-    return {
-      display,
-      numericValue: raw,
-      shouldCount: !suffix && raw <= 100_000,
-      context,
-      kpIndex: i,
-    };
+    return { display, numericValue: raw, shouldCount: !suffix && raw <= 100_000, context, kpIndex: i };
   }
   return null;
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
-
 export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
   segment,
+  assets,
   storyIndex,
   totalStories,
 }) => {
+  const heroImage = assets?.images?.[0] ?? null;
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
   const theme = THEMES[storyIndex % THEMES.length];
   const { r, g, b } = theme;
 
-  // Convenience spring helper — delays entry by `delay` frames
-  const sp = (
-    delay: number,
-    cfg?: { damping: number; stiffness: number; mass?: number }
-  ) =>
+  const sp = (delay: number, cfg?: { damping: number; stiffness: number; mass?: number }) =>
     spring({
       frame: Math.max(0, frame - delay),
       fps,
-      config: cfg ?? { damping: 18, stiffness: 220, mass: 0.85 },
+      config: cfg ?? { damping: 13, stiffness: 380, mass: 0.65 },
     });
 
-  // ── Shared animated values ────────────────────────────────────────────────
+  // ── Image panel animations ──────────────────────────────────────────────────
+  const imgSlide = sp(0, { damping: 22, stiffness: 140, mass: 1.3 });
+  const imgPanelX = interpolate(imgSlide, [0, 1], [-IMG_PANEL_W, 0]);
 
-  // Left accent bar: grows from centre outward
-  const barSp = sp(0, { damping: 24, stiffness: 120, mass: 1.5 });
-  const barPct = interpolate(barSp, [0, 1], [0, 60]);
+  const panProgress = interpolate(frame, [0, durationInFrames], [0, 1], {
+    extrapolateLeft: "clamp", extrapolateRight: "clamp",
+  });
+  const imgKbScale  = interpolate(panProgress, [0, 1], [1.08, 1.0]);
+  const imgKbTransY = interpolate(panProgress, [0, 1], [0, -30]);
 
-  const badgeOpacity = interpolate(frame, [3, 18], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
+  // ── Text + UI animations ────────────────────────────────────────────────────
+  const topBarWidth = interpolate(
+    spring({ frame, fps, config: { damping: 22, stiffness: 180, mass: 1.4 } }),
+    [0, 1], [0, 100],
+  );
+
+  const badgeOpacity = interpolate(frame, [5, 22], [0, 1], {
+    extrapolateLeft: "clamp", extrapolateRight: "clamp",
   });
-  const counterOpacity = interpolate(frame, [5, 22], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-  // Transition line appears near the end of the segment
+  const counterSp = sp(6, { damping: 14, stiffness: 320, mass: 0.7 });
+
   const transitionOpacity = interpolate(
     frame,
     [durationInFrames - 52, durationInFrames - 22],
     [0, 1],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
-
-  // ── Layout decision ───────────────────────────────────────────────────────
 
   const bigNum = findBigNumber(segment.keyPoints ?? []);
   const useBigNum = bigNum !== null;
 
-  // ── Standard layout: word-by-word headline ────────────────────────────────
-
   const words = segment.progressLabel.split(" ");
   const wordSprings = words.map((_, wi) =>
-    sp(8 + wi * 4, { damping: 13, stiffness: 310, mass: 0.6 })
+    sp(8 + wi * 3, { damping: 10, stiffness: 440, mass: 0.5 }),
   );
-
-  // Key points: slide from left + blur-to-sharp
   const kpSprings = (segment.keyPoints ?? []).slice(0, 3).map((_, i) =>
-    sp(30 + i * 15, { damping: 20, stiffness: 190, mass: 0.9 })
+    sp(28 + i * 14, { damping: 15, stiffness: 300, mass: 0.75 }),
   );
 
-  // ── Big-number layout ─────────────────────────────────────────────────────
+  const numSp     = useBigNum ? sp(8, { damping: 26, stiffness: 150, mass: 2.0 }) : 0;
+  const numScale  = interpolate(numSp, [0, 1], [0.6, 1]);
+  const numOpacity = interpolate(numSp, [0, 0.4], [0, 1]);
 
-  // Number entrance: scale from 0.5 + glow
-  const numSp = useBigNum ? sp(8, { damping: 32, stiffness: 130, mass: 2.2 }) : 0;
-  const numScale = interpolate(numSp, [0, 1], [0.55, 1]);
-  const numOpacity = interpolate(numSp, [0, 0.5], [0, 1]);
-
-  // Counting animation (only for non-abbreviated numbers)
   const counted = useBigNum && bigNum!.shouldCount
     ? Math.round(
         interpolate(frame, [10, 68], [0, bigNum!.numericValue], {
           extrapolateLeft: "clamp",
           extrapolateRight: "clamp",
           easing: Easing.out(Easing.cubic),
-        })
+        }),
       )
     : 0;
 
@@ -144,55 +132,112 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
       : bigNum!.display
     : "";
 
-  // Context line below number
-  const ctxSp = useBigNum ? sp(52, { damping: 18, stiffness: 200, mass: 0.85 }) : 0;
-
-  // Remaining key points (those that aren't the big number)
-  const remainingKps = (segment.keyPoints ?? []).filter(
-    (_, i) => !useBigNum || i !== bigNum!.kpIndex
-  );
+  const ctxSp = useBigNum ? sp(52, { damping: 16, stiffness: 220, mass: 0.85 }) : 0;
+  const remainingKps = (segment.keyPoints ?? []).filter((_, i) => !useBigNum || i !== bigNum!.kpIndex);
   const remSprings = remainingKps.map((_, i) =>
-    sp((useBigNum ? 66 : 30) + i * 13, { damping: 20, stiffness: 190, mass: 0.9 })
+    sp((useBigNum ? 66 : 28) + i * 12, { damping: 15, stiffness: 300, mass: 0.75 }),
   );
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // Content area left edge shifts right when image is present
+  const contentLeft = heroImage ? CONTENT_LEFT_SPLIT : 80;
 
   return (
-    <AbsoluteFill
-      style={{
-        background: `
-          radial-gradient(ellipse at 10% 48%, rgba(${r},${g},${b},0.18) 0%, transparent 52%),
-          linear-gradient(162deg, #080c18 0%, #0d1226 55%, #080c18 100%)
-        `,
-      }}
-    >
-      {/* ── Left accent bar ── */}
+    <AbsoluteFill style={{ background: "linear-gradient(160deg, #fff8ed 0%, #ffefd4 100%)" }}>
+
+      {/* ── Left photo panel — slides in from the left ───────────────────── */}
+      {heroImage && (
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            width: IMG_PANEL_W,
+            height: "100%",
+            overflow: "hidden",
+            transform: `translateX(${imgPanelX}px)`,
+          }}
+        >
+          <Img
+            src={heroImage.file}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              transform: `scale(${imgKbScale}) translateY(${imgKbTransY}px)`,
+              transformOrigin: "center center",
+            }}
+          />
+          {/* Gradient fade on the right edge: blends photo into background */}
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              right: 0,
+              width: 140,
+              height: "100%",
+              background: "linear-gradient(to right, transparent, #fff8ed)",
+            }}
+          />
+          {/* Thin vertical accent bar on the right edge */}
+          <div
+            style={{
+              position: "absolute",
+              top: "8%",
+              right: 0,
+              width: 4,
+              height: "84%",
+              background: theme.accent,
+              borderRadius: 2,
+              opacity: interpolate(imgSlide, [0, 1], [0, 0.7]),
+            }}
+          />
+        </div>
+      )}
+
+      {/* ── Top accent stripe (spans full width) ─────────────────────────── */}
       <div
         style={{
           position: "absolute",
+          top: 0,
           left: 0,
-          top: `${(100 - barPct) / 2}%`,
-          width: 4,
-          height: `${barPct}%`,
-          background: `linear-gradient(to bottom, transparent 0%, ${theme.accent} 20%, ${theme.accent} 80%, transparent 100%)`,
-          borderRadius: 2,
+          width: `${topBarWidth}%`,
+          height: 6,
+          background: theme.accent,
         }}
       />
 
-      {/* ── Category badge (top-left) ── */}
+      {/* ── Watermark number — bottom-right, very subtle ─────────────────── */}
       <div
         style={{
           position: "absolute",
-          top: 58,
-          left: 64,
-          opacity: badgeOpacity,
-          background: `rgba(${r},${g},${b},0.14)`,
-          border: `1px solid rgba(${r},${g},${b},0.38)`,
+          right: -10,
+          bottom: -40,
+          fontSize: 340,
+          fontWeight: 900,
           color: theme.accent,
-          padding: "5px 14px",
-          borderRadius: 3,
+          opacity: 0.055,
+          lineHeight: 1,
+          userSelect: "none",
+          fontFeatureSettings: '"tnum"',
+          pointerEvents: "none",
+        }}
+      >
+        {String(storyIndex + 1).padStart(2, "0")}
+      </div>
+
+      {/* ── Category badge ────────────────────────────────────────────────── */}
+      <div
+        style={{
+          position: "absolute",
+          top: 56,
+          left: contentLeft,
+          opacity: badgeOpacity,
+          background: theme.accent,
+          color: "#ffffff",
+          padding: "6px 18px",
+          borderRadius: 100,
           fontSize: 11,
-          letterSpacing: 3,
+          letterSpacing: 2.5,
           textTransform: "uppercase",
           fontWeight: 700,
         }}
@@ -200,40 +245,33 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
         {segment.category ?? "AI News"}
       </div>
 
-      {/* ── Story counter (top-right) ── */}
+      {/* ── Story counter (always top-right) ─────────────────────────────── */}
       <div
         style={{
           position: "absolute",
-          top: 50,
+          top: 46,
           right: 72,
-          opacity: counterOpacity,
+          opacity: counterSp,
+          transform: `translateY(${interpolate(counterSp, [0, 1], [-14, 0])}px)`,
           display: "flex",
           alignItems: "baseline",
-          gap: 6,
+          gap: 5,
         }}
       >
-        <span
-          style={{
-            color: theme.accent,
-            fontSize: 50,
-            fontWeight: 800,
-            lineHeight: 1,
-            fontFeatureSettings: '"tnum"',
-          }}
-        >
+        <span style={{ color: theme.accent, fontSize: 50, fontWeight: 900, lineHeight: 1, fontFeatureSettings: '"tnum"' }}>
           {String(storyIndex + 1).padStart(2, "0")}
         </span>
-        <span style={{ color: "rgba(255,255,255,0.20)", fontSize: 19 }}>
+        <span style={{ color: "#94a3b8", fontSize: 19 }}>
           / {String(totalStories).padStart(2, "0")}
         </span>
       </div>
 
-      {/* ── Main content area ── */}
+      {/* ── Main content area (right side in split mode) ──────────────────── */}
       <div
         style={{
           position: "absolute",
           top: 140,
-          left: 80,
+          left: contentLeft,
           right: 80,
           bottom: 80,
           display: "flex",
@@ -242,45 +280,32 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
         }}
       >
         {useBigNum ? (
-          /* ════ Big-Number Layout ════════════════════════════════════════════ */
           <>
-            {/* Number */}
-            <div
-              style={{
-                textAlign: "center",
-                opacity: numOpacity,
-                transform: `scale(${numScale})`,
-                marginBottom: 6,
-              }}
-            >
+            <div style={{ textAlign: "center", opacity: numOpacity, transform: `scale(${numScale})`, marginBottom: 8 }}>
               <span
                 style={{
-                  color: "#ffffff",
-                  fontSize: 168,
+                  color: theme.accent,
+                  fontSize: heroImage ? 128 : 164,
                   fontWeight: 900,
                   lineHeight: 1,
                   letterSpacing: -3,
                   fontFeatureSettings: '"tnum"',
-                  textShadow: `
-                    0 0 60px rgba(${r},${g},${b},0.7),
-                    0 0 140px rgba(${r},${g},${b},0.3)
-                  `,
+                  filter: `drop-shadow(0 0 32px rgba(${r},${g},${b},0.35))`,
                 }}
               >
                 {numDisplayStr}
               </span>
             </div>
 
-            {/* Context label */}
             <div
               style={{
                 textAlign: "center",
-                color: `rgba(${r},${g},${b},0.88)`,
-                fontSize: 26,
-                fontWeight: 500,
-                letterSpacing: 1.5,
+                color: "#475569",
+                fontSize: 24,
+                fontWeight: 600,
+                letterSpacing: 2.5,
                 textTransform: "uppercase",
-                marginBottom: 48,
+                marginBottom: 44,
                 opacity: ctxSp as number,
                 transform: `translateY(${interpolate(ctxSp as number, [0, 1], [14, 0])}px)`,
               }}
@@ -288,29 +313,21 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
               {bigNum!.context || segment.progressLabel}
             </div>
 
-            {/* Thin divider */}
             {remainingKps.length > 0 && (
               <div
                 style={{
                   alignSelf: "center",
-                  width: `${interpolate(ctxSp as number, [0, 1], [0, 28])}%`,
-                  height: 1,
-                  background: `rgba(${r},${g},${b},0.30)`,
+                  width: `${interpolate(ctxSp as number, [0, 1], [0, 26])}%`,
+                  height: 2,
+                  background: theme.accent,
+                  opacity: 0.28,
                   marginBottom: 28,
+                  borderRadius: 1,
                 }}
               />
             )}
 
-            {/* Remaining key points */}
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 14,
-                paddingLeft: 100,
-                paddingRight: 100,
-              }}
-            >
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               {remainingKps.map((kp, i) => {
                 const s = remSprings[i];
                 return (
@@ -318,41 +335,31 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
                     key={i}
                     style={{
                       display: "flex",
-                      alignItems: "flex-start",
+                      alignItems: "center",
+                      background: "rgba(255, 255, 255, 0.62)",
+                      backdropFilter: "blur(16px)",
+                      borderRadius: 14,
+                      padding: "14px 22px",
+                      border: "1px solid rgba(255, 255, 255, 0.88)",
+                      boxShadow: "0 4px 28px rgba(180, 120, 40, 0.09)",
                       opacity: s,
-                      transform: `translateY(${interpolate(s, [0, 1], [10, 0])}px)`,
-                      filter: `blur(${interpolate(s, [0, 1], [4, 0])}px)`,
+                      transform: `translateX(${interpolate(s, [0, 1], [28, 0])}px)`,
                     }}
                   >
-                    <div
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: "50%",
-                        background: theme.accent,
-                        marginTop: 10,
-                        marginRight: 14,
-                        flexShrink: 0,
-                        opacity: 0.7,
-                      }}
-                    />
-                    <span style={{ color: "#94a3b8", fontSize: 20, lineHeight: 1.5 }}>
-                      {kp}
-                    </span>
+                    <span style={{ color: "#334155", fontSize: 21, lineHeight: 1.5, fontWeight: 500 }}>{kp}</span>
                   </div>
                 );
               })}
             </div>
           </>
         ) : (
-          /* ════ Standard Layout ══════════════════════════════════════════════ */
           <>
-            {/* Headline — word by word with spring physics */}
-            <div style={{ marginBottom: 44, marginTop: 24 }}>
+            {/* Headline — words drop in from above */}
+            <div style={{ marginBottom: 42, marginTop: 22 }}>
               <h2
                 style={{
-                  color: "#f1f5f9",
-                  fontSize: 60,
+                  color: "#0f172a",
+                  fontSize: heroImage ? 52 : 60,
                   fontWeight: 800,
                   lineHeight: 1.18,
                   margin: 0,
@@ -368,7 +375,7 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
                         display: "inline-block",
                         marginRight: "0.26em",
                         opacity: s,
-                        transform: `translateY(${interpolate(s, [0, 1], [30, 0])}px)`,
+                        transform: `translateY(${interpolate(s, [0, 1], [-28, 0])}px)`,
                       }}
                     >
                       {word}
@@ -378,8 +385,8 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
               </h2>
             </div>
 
-            {/* Key points — slide from right + blur-to-sharp */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+            {/* Key point cards */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
               {(segment.keyPoints ?? []).slice(0, 3).map((kp, i) => {
                 const s = kpSprings[i];
                 return (
@@ -387,28 +394,28 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
                     key={i}
                     style={{
                       display: "flex",
-                      alignItems: "flex-start",
+                      alignItems: "center",
+                      background: "rgba(255, 255, 255, 0.62)",
+                      backdropFilter: "blur(16px)",
+                      borderRadius: 14,
+                      padding: "16px 22px",
+                      border: "1px solid rgba(255, 255, 255, 0.88)",
+                      boxShadow: "0 4px 28px rgba(180, 120, 40, 0.09)",
                       opacity: s,
-                      transform: `translateX(${interpolate(s, [0, 1], [22, 0])}px)`,
-                      filter: `blur(${interpolate(s, [0, 1], [5, 0])}px)`,
+                      transform: `translateX(${interpolate(s, [0, 1], [36, 0])}px)`,
                     }}
                   >
-                    {/* Accent dot */}
                     <div
                       style={{
-                        width: 7,
-                        height: 7,
+                        width: 8,
+                        height: 8,
                         borderRadius: "50%",
                         background: theme.accent,
-                        marginTop: 11,
-                        marginRight: 18,
+                        marginRight: 16,
                         flexShrink: 0,
-                        boxShadow: `0 0 8px rgba(${r},${g},${b},0.6)`,
                       }}
                     />
-                    <span style={{ color: "#cbd5e1", fontSize: 24, lineHeight: 1.5 }}>
-                      {kp}
-                    </span>
+                    <span style={{ color: "#334155", fontSize: 23, lineHeight: 1.5, fontWeight: 500 }}>{kp}</span>
                   </div>
                 );
               })}
@@ -416,7 +423,7 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
           </>
         )}
 
-        {/* ── Transition line — bottom of content, fades in near segment end ── */}
+        {/* Transition line */}
         <div
           style={{
             position: "absolute",
@@ -426,18 +433,11 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
             opacity: transitionOpacity,
             display: "flex",
             alignItems: "center",
-            gap: 14,
+            gap: 10,
           }}
         >
-          <div
-            style={{
-              width: 22,
-              height: 1,
-              background: `rgba(${r},${g},${b},0.55)`,
-              flexShrink: 0,
-            }}
-          />
-          <span style={{ color: "#475569", fontSize: 15, fontStyle: "italic", lineHeight: 1.4 }}>
+          <span style={{ color: theme.accent, fontSize: 20, fontWeight: 700 }}>›</span>
+          <span style={{ color: "#64748b", fontSize: 15, fontStyle: "italic", lineHeight: 1.4 }}>
             {segment.transitionLine}
           </span>
         </div>

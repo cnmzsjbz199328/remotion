@@ -20,7 +20,7 @@ export const Outro: React.FC = () => {
   return (
     <AbsoluteFill
       style={{
-        background: "linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 100%)",
+        background: "linear-gradient(160deg, #fff8ed 0%, #ffefd4 50%, #fff8ed 100%)",
         alignItems: "center",
         justifyContent: "center",
         flexDirection: "column",
@@ -30,7 +30,7 @@ export const Outro: React.FC = () => {
     >
       <div
         style={{
-          color: "#fff",
+          color: "#1e293b",
           fontSize: 52,
           fontWeight: 700,
           marginBottom: 18,
@@ -41,7 +41,7 @@ export const Outro: React.FC = () => {
       </div>
       <div
         style={{
-          color: "#6b7280",
+          color: "#92400e",
           fontSize: 22,
           marginBottom: 48,
           letterSpacing: 0.5,
@@ -51,7 +51,7 @@ export const Outro: React.FC = () => {
       </div>
       <div
         style={{
-          background: "#3b82f6",
+          background: "#d97706",
           color: "#fff",
           padding: "16px 48px",
           borderRadius: 50,
