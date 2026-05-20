@@ -23,6 +23,40 @@ const THEMES = [
 const IMG_PANEL_W  = 820;  // left photo panel width
 const CONTENT_LEFT_SPLIT = 900;  // content area left edge when image present
 
+// ── Letterboxed image with blurred backdrop ──────────────────────────────────
+// Avoids cropping tall/portrait sources (e.g. tweet screenshots). The foreground
+// image uses `contain` so nothing is cut; the panel is filled by a blurred,
+// scaled copy of the same image acting as a contextual backdrop.
+const Letterbox: React.FC<{
+  src: string;
+  opacity: number;
+  scale: number;
+  translateY: number;
+}> = ({ src, opacity, scale, translateY }) => (
+  <div style={{ position: "absolute", inset: 0, opacity }}>
+    <Img
+      src={src}
+      style={{
+        position: "absolute", inset: 0,
+        width: "100%", height: "100%",
+        objectFit: "cover",
+        filter: "blur(28px) brightness(0.78) saturate(0.9)",
+        transform: "scale(1.12)",
+      }}
+    />
+    <Img
+      src={src}
+      style={{
+        position: "absolute", inset: 0,
+        width: "100%", height: "100%",
+        objectFit: "contain",
+        transform: `scale(${scale}) translateY(${translateY}px)`,
+        transformOrigin: "center center",
+      }}
+    />
+  </div>
+);
+
 export interface NewsSegmentSceneProps {
   segment: NewsSegment;
   assets: SegmentAssets;
@@ -60,7 +94,8 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
   storyIndex,
   totalStories,
 }) => {
-  const heroImage = assets?.images?.[0] ?? null;
+  const images = assets?.images ?? [];
+  const hasImage = images.length > 0;
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
   const theme = THEMES[storyIndex % THEMES.length];
@@ -80,8 +115,6 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
   const panProgress = interpolate(frame, [0, durationInFrames], [0, 1], {
     extrapolateLeft: "clamp", extrapolateRight: "clamp",
   });
-  const imgKbScale  = interpolate(panProgress, [0, 1], [1.08, 1.0]);
-  const imgKbTransY = interpolate(panProgress, [0, 1], [0, -30]);
 
   // ── Text + UI animations ────────────────────────────────────────────────────
   const topBarWidth = interpolate(
@@ -139,13 +172,28 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
   );
 
   // Content area left edge shifts right when image is present
-  const contentLeft = heroImage ? CONTENT_LEFT_SPLIT : 80;
+  const contentLeft = hasImage ? CONTENT_LEFT_SPLIT : 80;
+
+  // Multi-image carousel: split panProgress into N equal slots, crossfade the
+  // last ~15% of each slot into the next image. Single-image case degrades
+  // gracefully (no next image, no crossfade).
+  const nImages = images.length;
+  const slotFloat = panProgress * Math.max(1, nImages);
+  const slotIdx = Math.min(Math.max(0, nImages - 1), Math.floor(slotFloat));
+  const slotLocal = slotFloat - slotIdx;
+  const FADE_START = 0.85;
+  const isLastSlot = slotIdx >= nImages - 1;
+  const inCrossfade = !isLastSlot && slotLocal > FADE_START;
+  const currOpacity = inCrossfade ? interpolate(slotLocal, [FADE_START, 1], [1, 0]) : 1;
+  const nextOpacity = inCrossfade ? interpolate(slotLocal, [FADE_START, 1], [0, 1]) : 0;
+  const slotScale = interpolate(slotLocal, [0, 1], [1.08, 1.0]);
+  const slotTransY = interpolate(slotLocal, [0, 1], [0, -30]);
 
   return (
     <AbsoluteFill style={{ background: "linear-gradient(160deg, #fff8ed 0%, #ffefd4 100%)" }}>
 
-      {/* ── Left photo panel — slides in from the left ───────────────────── */}
-      {heroImage && (
+      {/* ── Left photo panel — slides in from the left, supports multi-image ─ */}
+      {hasImage && (
         <div
           style={{
             position: "absolute",
@@ -157,16 +205,22 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
             transform: `translateX(${imgPanelX}px)`,
           }}
         >
-          <Img
-            src={heroImage.file}
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              transform: `scale(${imgKbScale}) translateY(${imgKbTransY}px)`,
-              transformOrigin: "center center",
-            }}
+          {/* Current image */}
+          <Letterbox
+            src={images[slotIdx].file}
+            opacity={currOpacity}
+            scale={slotScale}
+            translateY={slotTransY}
           />
+          {/* Next image — only painted during the crossfade window */}
+          {!isLastSlot && (
+            <Letterbox
+              src={images[slotIdx + 1].file}
+              opacity={nextOpacity}
+              scale={1.08}
+              translateY={0}
+            />
+          )}
           {/* Gradient fade on the right edge: blends photo into background */}
           <div
             style={{
@@ -285,7 +339,7 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
               <span
                 style={{
                   color: theme.accent,
-                  fontSize: heroImage ? 128 : 164,
+                  fontSize: hasImage ? 128 : 164,
                   fontWeight: 900,
                   lineHeight: 1,
                   letterSpacing: -3,
@@ -359,7 +413,7 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
               <h2
                 style={{
                   color: "#0f172a",
-                  fontSize: heroImage ? 52 : 60,
+                  fontSize: hasImage ? 52 : 60,
                   fontWeight: 800,
                   lineHeight: 1.18,
                   margin: 0,

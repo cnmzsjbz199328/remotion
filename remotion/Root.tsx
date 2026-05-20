@@ -20,9 +20,14 @@ loadInter("normal", {
   subsets: ["latin"],
 });
 loadNotoSC("normal", {
-  // CJK fonts are ~500KB–1MB per weight; load only the ones actually used.
-  weights: ["400", "500", "700", "900"],
+  // CJK fonts are huge and Google Fonts splits each weight into ~100 unicode-range
+  // chunks. We only load 400 (regular) and 700 (bold) — other weights used in
+  // components (500/600/800/900) get mapped to the nearest available by the browser.
+  // ignoreTooManyRequestsWarning silences Remotion's harmless console warning
+  // (the chunking is inherent to the chinese-simplified subset).
+  weights: ["400", "700"],
   subsets: ["chinese-simplified"],
+  ignoreTooManyRequestsWarning: true,
 });
 
 // Browser picks per-character: Latin runs through Inter; CJK falls through to Noto Sans SC.

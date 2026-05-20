@@ -1,6 +1,9 @@
 import React from "react";
 import { AbsoluteFill, interpolate, useCurrentFrame } from "remotion";
 
+// Outro background. The MascotSystem owns the centered farewell title (revealed
+// left→right as the horse walks across), so this component just paints the
+// gradient backdrop and a discreet subscribe pill near the bottom.
 export const Outro: React.FC = () => {
   const frame = useCurrentFrame();
 
@@ -8,11 +11,7 @@ export const Outro: React.FC = () => {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
-  const scale = interpolate(frame, [0, 24], [0.95, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-  const btnOpacity = interpolate(frame, [30, 55], [0, 1], {
+  const btnOpacity = interpolate(frame, [60, 95], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
@@ -22,40 +21,19 @@ export const Outro: React.FC = () => {
       style={{
         background: "linear-gradient(160deg, #fff8ed 0%, #ffefd4 50%, #fff8ed 100%)",
         alignItems: "center",
-        justifyContent: "center",
+        justifyContent: "flex-end",
         flexDirection: "column",
+        paddingBottom: 180,
         opacity,
-        transform: `scale(${scale})`,
       }}
     >
       <div
         style={{
-          color: "#1e293b",
-          fontSize: 52,
-          fontWeight: 700,
-          marginBottom: 18,
-          textAlign: "center",
-        }}
-      >
-        Thanks for watching
-      </div>
-      <div
-        style={{
-          color: "#92400e",
-          fontSize: 22,
-          marginBottom: 48,
-          letterSpacing: 0.5,
-        }}
-      >
-        Stay current — subscribe for daily AI news
-      </div>
-      <div
-        style={{
           background: "#d97706",
           color: "#fff",
-          padding: "16px 48px",
+          padding: "14px 42px",
           borderRadius: 50,
-          fontSize: 20,
+          fontSize: 18,
           fontWeight: 700,
           letterSpacing: 1,
           opacity: btnOpacity,

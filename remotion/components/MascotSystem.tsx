@@ -8,25 +8,94 @@ import horseWalkData from "../assets/horse-walk.json";
 interface MascotSystemProps {
   timeline: TimelineEntry[];
   totalFrames: number;
-  introEnd: number;    // frame where intro horse finishes shrinking to corner (= end of Intro)
-  outroStart: number;  // frame where outro horse leaps to center (= outroTimeline.from)
+  introEnd: number;    // frame where intro mascot finishes and progress bar takes over
+  outroStart: number;  // frame where outro animation begins
   introTitle?: string;
   introDate?: string;
+  outroTitle?: string;
 }
-
-const truncate = (s: string, n: number) =>
-  s.length > n ? s.slice(0, n - 1) + "…" : s;
 
 const BAR_H = 40;
 const MASCOT_S = 80;    // small size (progress bar)
 const MASCOT_L = 200;   // large size (intro / outro)
 
-// How many frames each animation stage takes
-const ENTER_F = 35;     // horse gallops from right to center
-const TITLE_F = 60;     // title stays visible at center
-const SHRINK_F = 55;    // shrink + move to corner
-const LEAP_F = 48;      // outro leap to center
-const GROW_F = 72;      // grow to full size
+// Animation stages — shared by intro and outro.
+// Horse walks left→right across the screen, "pulling" the title in behind it via
+// a clip-path reveal. After it passes the title it pauses, then either descends
+// to the progress bar (intro) or fades out (outro).
+const WALK_F = 80;      // horse traverses the canvas
+const HOLD_F = 20;      // hold horse at the end of the walk, full title visible
+const TRANSITION_F = 50; // intro: descend to progress bar / outro: fade out
+
+// Title geometry (centred horizontally)
+const TITLE_W_FRAC = 0.62; // 62% of canvas width
+
+interface RevealedTitleProps {
+  title: string;
+  subtitle?: string;
+  width: number;
+  height: number;
+  horseX: number;
+  titleStartX: number;
+  titleEndX: number;
+  textOpacity: number;
+}
+
+// Title text revealed left→right as the horse passes over its bounds.
+const RevealedTitle: React.FC<RevealedTitleProps> = ({
+  title, subtitle, width, height, horseX, titleStartX, titleEndX, textOpacity,
+}) => {
+  // Clip-right % goes 100 → 0 as horse moves from titleStartX → titleEndX.
+  const clipRightPct = interpolate(
+    horseX,
+    [titleStartX, titleEndX],
+    [100, 0],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+  );
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: height / 2 - 60,
+        left: 0,
+        right: 0,
+        textAlign: "center",
+        opacity: textOpacity,
+        pointerEvents: "none",
+        clipPath: `inset(0 ${clipRightPct}% 0 0)`,
+        WebkitClipPath: `inset(0 ${clipRightPct}% 0 0)`,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 64,
+          fontWeight: 800,
+          color: "#1e293b",
+          letterSpacing: -1,
+          textShadow: "0 0 24px rgba(255,248,237,1), 0 0 48px rgba(255,248,237,0.9)",
+        }}
+      >
+        {title}
+      </div>
+      {subtitle && (
+        <div
+          style={{
+            fontSize: 22,
+            color: "#92400e",
+            marginTop: 12,
+            fontWeight: 500,
+            textShadow: "0 0 16px rgba(255,248,237,0.95)",
+          }}
+        >
+          {subtitle}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const truncate = (s: string, n: number) =>
+  s.length > n ? s.slice(0, n - 1) + "…" : s;
 
 export const MascotSystem: React.FC<MascotSystemProps> = ({
   timeline,
@@ -35,109 +104,111 @@ export const MascotSystem: React.FC<MascotSystemProps> = ({
   outroStart,
   introTitle = "AI News Daily",
   introDate,
+  outroTitle = "See you tomorrow",
 }) => {
   const frame = useCurrentFrame();
   const { width, height } = useVideoConfig();
   const globalProgress = frame / totalFrames;
 
-  // ─── INTRO HORSE ─────────────────────────────────────────────────────
-  // Enters from right (facing left), pauses at center, shrinks to bottom-left
+  // Title geometry shared by intro + outro
+  const titleW = width * TITLE_W_FRAC;
+  const titleStartX = (width - titleW) / 2;
+  const titleEndX = titleStartX + titleW;
 
-  const shrinkStart = introEnd - SHRINK_F;
+  // ─── INTRO: horse walks L→R across canvas, title reveals behind ──────────
+  //
+  // Stages (relative to frame 0):
+  //   [0 .. WALK_F]                walk: x = -MASCOT_L → titleEndX + MASCOT_L
+  //   [WALK_F .. WALK_F+HOLD_F]    hold at end-of-walk position, title fully revealed
+  //   [WALK_F+HOLD_F .. introEnd]  descend to progress-bar corner, shrink
+  const introWalkEndX = titleEndX + MASCOT_L * 0.3; // horse stops just past title's right edge
+  const introHoldEnd = WALK_F + HOLD_F;
+  const introShrinkStart = introHoldEnd;
+  // Centre vertically slightly below the title
+  const introWalkY = height / 2 - MASCOT_L / 2 + 40;
 
   const introX = interpolate(
     frame,
-    [0, ENTER_F, shrinkStart, introEnd],
-    [width + MASCOT_L, width / 2 - MASCOT_L / 2, width / 2 - MASCOT_L / 2, 0],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+    [0, WALK_F, introHoldEnd, introEnd],
+    [-MASCOT_L, introWalkEndX, introWalkEndX, 0],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+  );
+  // Monotonic reveal X for the title clip — never reverses, so the title stays
+  // fully revealed once the horse has walked past it (even when introX descends
+  // back toward 0 during the shrink stage).
+  const introRevealX = interpolate(
+    frame,
+    [0, WALK_F],
+    [-MASCOT_L, introWalkEndX],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
   const introY = interpolate(
     frame,
-    [shrinkStart, introEnd],
-    [height / 2 - MASCOT_L / 2, height - BAR_H - MASCOT_S + 8],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+    [introShrinkStart, introEnd],
+    [introWalkY, height - BAR_H - MASCOT_S + 8],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
   const introSize = interpolate(
     frame,
-    [shrinkStart, introEnd],
+    [introShrinkStart, introEnd],
     [MASCOT_L, MASCOT_S],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
   const introOpacity = interpolate(
     frame,
     [introEnd - 8, introEnd],
     [1, 0],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
-
-  // Title fades in after horse arrives, fades out as horse starts shrinking
-  const titleOpacity = interpolate(
+  const introTitleOpacity = interpolate(
     frame,
-    [ENTER_F + 5, ENTER_F + 20, shrinkStart - 10, shrinkStart + 10],
+    [4, 12, introShrinkStart, introEnd - 10],
     [0, 1, 1, 0],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
 
-  // ─── PROGRESS HORSE ─────────────────────────────────────────────────
-  // Walks left→right along bottom bar (faces right — no transform)
-
+  // ─── PROGRESS HORSE: walks left→right along bottom bar ───────────────────
   const progressX = Math.max(
     0,
-    Math.min(width - MASCOT_S, globalProgress * width - MASCOT_S / 2)
+    Math.min(width - MASCOT_S, globalProgress * width - MASCOT_S / 2),
   );
   const progressOpacity = interpolate(
     frame,
     [introEnd, introEnd + 12, outroStart - 12, outroStart],
     [0, 1, 1, 0],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
 
-  // ─── OUTRO HORSE ──────────────────────────────────────────────────────
-  // Leaps from right side of progress bar to center, grows, sleeps
-
-  const outroStartX = Math.max(
-    0,
-    Math.min(width - MASCOT_S, (outroStart / totalFrames) * width - MASCOT_S / 2)
-  );
-  const leapEnd = outroStart + LEAP_F;
-  const growEnd = outroStart + GROW_F;
+  // ─── OUTRO: same animation pattern as intro, no breathing ────────────────
+  //
+  // Stages (relative to outroStart):
+  //   [outroStart .. outroStart+WALK_F]                walk: x = -MASCOT_L → introWalkEndX
+  //   [.. + HOLD_F]                                    hold, title fully revealed
+  //   [.. + TRANSITION_F]                              fade everything out
+  const outroWalkEnd = outroStart + WALK_F;
+  const outroHoldEnd = outroWalkEnd + HOLD_F;
+  const outroFadeEnd = outroHoldEnd + TRANSITION_F;
 
   const outroX = interpolate(
     frame,
-    [outroStart, leapEnd],
-    [outroStartX, width / 2 - MASCOT_L / 2],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+    [outroStart, outroWalkEnd],
+    [-MASCOT_L, introWalkEndX],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
-  const outroY = interpolate(
-    frame,
-    [outroStart, leapEnd],
-    [height - BAR_H - MASCOT_S + 8, height / 2 - MASCOT_L / 2],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
-  );
-  const outroSize = interpolate(
-    frame,
-    [outroStart, growEnd],
-    [MASCOT_S, MASCOT_L],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
-  );
-  // Gentle breathing oscillation once fully grown
-  const breathY =
-    frame >= growEnd ? 5 * Math.sin((2 * Math.PI * (frame - growEnd)) / 45) : 0;
-
   const outroOpacity = interpolate(
     frame,
-    [outroStart, outroStart + 8],
-    [0, 1],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+    [outroStart, outroStart + 6, outroHoldEnd, outroFadeEnd],
+    [0, 1, 1, 0],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
-  const outroTextOpacity = interpolate(
+  const outroTitleOpacity = interpolate(
     frame,
-    [growEnd + 5, growEnd + 25],
-    [0, 1],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+    [outroStart + 4, outroStart + 12, outroHoldEnd, outroFadeEnd - 5],
+    [0, 1, 1, 0],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
 
-  // ─── PROGRESS BAR segments ───────────────────────────────────────────
+  // ─── PROGRESS BAR segments ───────────────────────────────────────────────
   const segments = timeline.map((t) => {
     const segStart = t.from / totalFrames;
     const segW = t.durationInFrames / totalFrames;
@@ -151,10 +222,10 @@ export const MascotSystem: React.FC<MascotSystemProps> = ({
 
   return (
     <>
-      {/* ── Full-canvas layer: intro horse + outro horse ── */}
+      {/* ── Full-canvas layer: intro horse + outro horse + revealed titles ── */}
       <AbsoluteFill style={{ pointerEvents: "none", zIndex: 50 }}>
 
-        {/* INTRO horse — faces LEFT */}
+        {/* INTRO horse — faces RIGHT (no scaleX flip), walks left→right */}
         {frame < introEnd + 5 && (
           <div
             style={{
@@ -164,7 +235,6 @@ export const MascotSystem: React.FC<MascotSystemProps> = ({
               width: introSize,
               height: introSize,
               opacity: introOpacity,
-              transform: "scaleX(-1)",
               filter: "drop-shadow(0 4px 14px rgba(0,0,0,0.18))",
             }}
           >
@@ -172,92 +242,48 @@ export const MascotSystem: React.FC<MascotSystemProps> = ({
           </div>
         )}
 
-        {/* Intro title text — appears after horse arrives */}
+        {/* Intro title — revealed left→right as the horse passes */}
         {frame < introEnd && (
-          <div
-            style={{
-              position: "absolute",
-              top: height / 2 - 60,
-              left: 0,
-              right: 0,
-              textAlign: "center",
-              opacity: titleOpacity,
-              pointerEvents: "none",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 52,
-                fontWeight: 800,
-                color: "#1e293b",
-                letterSpacing: -1,
-                textShadow: "0 0 24px rgba(255,248,237,1), 0 0 48px rgba(255,248,237,0.9)",
-              }}
-            >
-              {introTitle}
-            </div>
-            {introDate && (
-              <div
-                style={{
-                  fontSize: 22,
-                  color: "#92400e",
-                  marginTop: 10,
-                  fontWeight: 500,
-                  textShadow: "0 0 16px rgba(255,248,237,0.95)",
-                }}
-              >
-                {introDate}
-              </div>
-            )}
-          </div>
+          <RevealedTitle
+            title={introTitle}
+            subtitle={introDate}
+            width={width}
+            height={height}
+            horseX={introRevealX + MASCOT_L / 2}
+            titleStartX={titleStartX}
+            titleEndX={titleEndX}
+            textOpacity={introTitleOpacity}
+          />
         )}
 
-        {/* OUTRO horse — faces LEFT (leaping toward center from right) */}
-        {frame >= outroStart - 5 && (
+        {/* OUTRO horse — same direction, no breathing */}
+        {frame >= outroStart - 5 && frame < outroFadeEnd + 5 && (
           <div
             style={{
               position: "absolute",
               left: outroX,
-              top: outroY + breathY,
-              width: outroSize,
-              height: outroSize,
+              top: introWalkY,
+              width: MASCOT_L,
+              height: MASCOT_L,
               opacity: outroOpacity,
-              transform: "scaleX(-1)",
               filter: "drop-shadow(0 4px 18px rgba(0,0,0,0.15))",
             }}
           >
-            {/* Stop looping after fully grown — horse "settles" */}
-            <Lottie
-              animationData={horseWalkData as LottieAnimationData}
-              loop={frame < growEnd + 5}
-            />
+            <Lottie animationData={horseWalkData as LottieAnimationData} loop />
           </div>
         )}
 
-        {/* Outro text floats above the sleeping horse */}
-        {frame >= growEnd && (
-          <div
-            style={{
-              position: "absolute",
-              top: height / 2 - MASCOT_L / 2 - 64,
-              left: 0,
-              right: 0,
-              textAlign: "center",
-              opacity: outroTextOpacity,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 26,
-                fontWeight: 700,
-                color: "#92400e",
-                letterSpacing: 1,
-                textShadow: "0 2px 8px rgba(255,248,237,0.9)",
-              }}
-            >
-              See you tomorrow! 🌅
-            </div>
-          </div>
+        {/* Outro title — same reveal pattern */}
+        {frame >= outroStart - 5 && frame < outroFadeEnd + 5 && (
+          <RevealedTitle
+            title={outroTitle}
+            width={width}
+            height={height}
+            horseX={outroX + MASCOT_L / 2}
+            titleStartX={titleStartX}
+            titleEndX={titleEndX}
+            textOpacity={outroTitleOpacity}
+          />
         )}
       </AbsoluteFill>
 
