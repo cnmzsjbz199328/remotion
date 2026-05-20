@@ -1,6 +1,6 @@
 ---
 name: fetch-ai-insights
-description: Use your own web-search capabilities to surface a lightweight shortlist (6–10 candidates) of high-impact AI developments for the target date, cross-reference each against authoritative sources, and write the result to cache/news-insights-{date}.json. This is the FAST phase — no article body extraction, no narration writing. Deep analysis happens later in /gen-script, after the user has marked which candidates to keep.
+description: Use your own web-search capabilities to surface a lightweight shortlist of 10 high-impact AI candidates for the target date, cross-reference each against authoritative sources, and write the result to cache/news-insights-{date}.json. This is the FAST phase — no article body extraction, no narration writing. Deep analysis happens later in /gen-script, after the user has marked which candidates to keep.
 argument-hint: [YYYY-MM-DD]
 ---
 
@@ -17,7 +17,7 @@ purely: "follow these instructions and write a JSON file in this schema".
 
 | Phase | Skill | Cost per candidate | Output |
 |-------|-------|---------------------|--------|
-| **Fast (this skill)** | `/fetch-ai-insights` | low: title + 1–2 sentence significance + ≥2 source URLs | 6–10 candidates ranked by impact |
+| **Fast (this skill)** | `/fetch-ai-insights` | low: title + 1–2 sentence significance + ≥2 source URLs | 10 candidates ranked by impact |
 | Deep | `/gen-script` | high: WebFetch each `selected:true` candidate's article, write narration | Per-segment Chinese narration |
 
 The point: don't spend the deep-analysis budget on candidates the user will
@@ -142,7 +142,7 @@ interface InsightsCache {
   date: string;                          // e.g. "2026-05-20"
   fetchedAt: string;                     // ISO 8601 timestamp
   method: "ai-search-synthesis";
-  insights: AIInsight[];                 // 6–10 candidates
+  insights: AIInsight[];                 // 10 candidates
 }
 
 interface AIInsight {
@@ -199,7 +199,7 @@ later.
 
 ## After running
 
-1. Confirm `cache/news-insights-{date}.json` has 6–10 candidates, sorted by
+1. Confirm `cache/news-insights-{date}.json` has 10 candidates, sorted by
    impactScore descending, every one with `selected: false`.
 2. Print the shortlist back to the user — one line per candidate with
    impact score, topic, and significance. Ask them to pick 3–5 winners.
