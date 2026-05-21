@@ -27,13 +27,8 @@ const CONTENT_LEFT_SPLIT = 900;  // content area left edge when image present
 // Avoids cropping tall/portrait sources (e.g. tweet screenshots). The foreground
 // image uses `contain` so nothing is cut; the panel is filled by a blurred,
 // scaled copy of the same image acting as a contextual backdrop.
-const Letterbox: React.FC<{
-  src: string;
-  opacity: number;
-  scale: number;
-  translateY: number;
-}> = ({ src, opacity, scale, translateY }) => (
-  <div style={{ position: "absolute", inset: 0, opacity }}>
+const Letterbox: React.FC<{ src: string }> = ({ src }) => (
+  <div style={{ position: "absolute", inset: 0 }}>
     <Img
       src={src}
       style={{
@@ -50,8 +45,6 @@ const Letterbox: React.FC<{
         position: "absolute", inset: 0,
         width: "100%", height: "100%",
         objectFit: "contain",
-        transform: `scale(${scale}) translateY(${translateY}px)`,
-        transformOrigin: "center center",
       }}
     />
   </div>
@@ -62,7 +55,7 @@ export interface NewsSegmentSceneProps {
   assets: SegmentAssets;
   tts: TtsSegment;
   storyIndex: number;
-  totalStories: number;
+  totalStories?: number;
 }
 
 interface BigNum {
@@ -92,7 +85,6 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
   segment,
   assets,
   storyIndex,
-  totalStories,
 }) => {
   const images = assets?.images ?? [];
   const hasImage = images.length > 0;
@@ -121,11 +113,6 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
     spring({ frame, fps, config: { damping: 22, stiffness: 180, mass: 1.4 } }),
     [0, 1], [0, 100],
   );
-
-  const badgeOpacity = interpolate(frame, [5, 22], [0, 1], {
-    extrapolateLeft: "clamp", extrapolateRight: "clamp",
-  });
-  const counterSp = sp(6, { damping: 14, stiffness: 320, mass: 0.7 });
 
   const transitionOpacity = interpolate(
     frame,
@@ -174,20 +161,19 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
   // Content area left edge shifts right when image is present
   const contentLeft = hasImage ? CONTENT_LEFT_SPLIT : 80;
 
-  // Multi-image carousel: split panProgress into N equal slots, crossfade the
-  // last ~15% of each slot into the next image. Single-image case degrades
-  // gracefully (no next image, no crossfade).
+  // Multi-image carousel: split panProgress into N equal slots, slide the next
+  // image up from the bottom in the last ~15% of each slot to partially cover
+  // the current image. Single-image case degrades gracefully.
   const nImages = images.length;
   const slotFloat = panProgress * Math.max(1, nImages);
   const slotIdx = Math.min(Math.max(0, nImages - 1), Math.floor(slotFloat));
   const slotLocal = slotFloat - slotIdx;
-  const FADE_START = 0.85;
+  const SLIDE_START = 0.85;
   const isLastSlot = slotIdx >= nImages - 1;
-  const inCrossfade = !isLastSlot && slotLocal > FADE_START;
-  const currOpacity = inCrossfade ? interpolate(slotLocal, [FADE_START, 1], [1, 0]) : 1;
-  const nextOpacity = inCrossfade ? interpolate(slotLocal, [FADE_START, 1], [0, 1]) : 0;
-  const slotScale = interpolate(slotLocal, [0, 1], [1.08, 1.0]);
-  const slotTransY = interpolate(slotLocal, [0, 1], [0, -30]);
+  const inSlide = !isLastSlot && slotLocal > SLIDE_START;
+  const nextTranslateYPct = inSlide
+    ? interpolate(slotLocal, [SLIDE_START, 1], [100, 0])
+    : 100;
 
   return (
     <AbsoluteFill style={{ background: "linear-gradient(160deg, #fff8ed 0%, #ffefd4 100%)" }}>
@@ -205,21 +191,22 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
             transform: `translateX(${imgPanelX}px)`,
           }}
         >
-          {/* Current image */}
-          <Letterbox
-            src={images[slotIdx].file}
-            opacity={currOpacity}
-            scale={slotScale}
-            translateY={slotTransY}
-          />
-          {/* Next image — only painted during the crossfade window */}
+          {/* Current image — stays in place */}
+          <div style={{ position: "absolute", inset: 0, zIndex: 1 }}>
+            <Letterbox src={images[slotIdx].file} />
+          </div>
+          {/* Next image — slides up from the bottom in the transition window */}
           {!isLastSlot && (
-            <Letterbox
-              src={images[slotIdx + 1].file}
-              opacity={nextOpacity}
-              scale={1.08}
-              translateY={0}
-            />
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                zIndex: 2,
+                transform: `translateY(${nextTranslateYPct}%)`,
+              }}
+            >
+              <Letterbox src={images[slotIdx + 1].file} />
+            </div>
           )}
           {/* Gradient fade on the right edge: blends photo into background */}
           <div
@@ -259,66 +246,6 @@ export const NewsSegmentScene: React.FC<NewsSegmentSceneProps> = ({
           background: theme.accent,
         }}
       />
-
-      {/* ── Watermark number — bottom-right, very subtle ─────────────────── */}
-      <div
-        style={{
-          position: "absolute",
-          right: -10,
-          bottom: -40,
-          fontSize: 340,
-          fontWeight: 900,
-          color: theme.accent,
-          opacity: 0.055,
-          lineHeight: 1,
-          userSelect: "none",
-          fontFeatureSettings: '"tnum"',
-          pointerEvents: "none",
-        }}
-      >
-        {String(storyIndex + 1).padStart(2, "0")}
-      </div>
-
-      {/* ── Category badge ────────────────────────────────────────────────── */}
-      <div
-        style={{
-          position: "absolute",
-          top: 56,
-          left: contentLeft,
-          opacity: badgeOpacity,
-          background: theme.accent,
-          color: "#ffffff",
-          padding: "6px 18px",
-          borderRadius: 100,
-          fontSize: 11,
-          letterSpacing: 2.5,
-          textTransform: "uppercase",
-          fontWeight: 700,
-        }}
-      >
-        {segment.category ?? "AI News"}
-      </div>
-
-      {/* ── Story counter (always top-right) ─────────────────────────────── */}
-      <div
-        style={{
-          position: "absolute",
-          top: 46,
-          right: 72,
-          opacity: counterSp,
-          transform: `translateY(${interpolate(counterSp, [0, 1], [-14, 0])}px)`,
-          display: "flex",
-          alignItems: "baseline",
-          gap: 5,
-        }}
-      >
-        <span style={{ color: theme.accent, fontSize: 50, fontWeight: 900, lineHeight: 1, fontFeatureSettings: '"tnum"' }}>
-          {String(storyIndex + 1).padStart(2, "0")}
-        </span>
-        <span style={{ color: "#94a3b8", fontSize: 19 }}>
-          / {String(totalStories).padStart(2, "0")}
-        </span>
-      </div>
 
       {/* ── Main content area (right side in split mode) ──────────────────── */}
       <div

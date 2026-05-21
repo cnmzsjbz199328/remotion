@@ -211,11 +211,14 @@ async function main(): Promise<void> {
     const rawPath = path.join(audioDir, `${job.id}_raw.wav`);
     const outPath = path.join(audioDir, `${job.id}.wav`);
 
-    const audioBuffer = await callTTS(job.text);
-    fs.writeFileSync(rawPath, audioBuffer);
-    console.log(`  ✓ [${job.id}] Raw WAV: ${(audioBuffer.length / 1024).toFixed(0)} KB — normalizing…`);
-
-    normalizeAudio(rawPath, outPath);
+    if (fs.existsSync(outPath)) {
+      console.log(`  ↪ [${job.id}] Reusing cached audio: ${outPath}`);
+    } else {
+      const audioBuffer = await callTTS(job.text);
+      fs.writeFileSync(rawPath, audioBuffer);
+      console.log(`  ✓ [${job.id}] Raw WAV: ${(audioBuffer.length / 1024).toFixed(0)} KB — normalizing…`);
+      normalizeAudio(rawPath, outPath);
+    }
     const durationMs = getDurationMs(outPath);
     const durationFrames = Math.ceil(durationMs / (1000 / fps)) + 2;
     console.log(`  ✓ [${job.id}] ${(durationMs / 1000).toFixed(2)}s → ${durationFrames} frames`);

@@ -51,8 +51,8 @@ export const NewsVideo: React.FC<VideoInputProps> = ({
       {/* ── Background music — full video, low volume ─────── */}
       <Audio src={bgmSrc} volume={0.18} />
 
-      {/* ── Intro animation (5 s) ─────────────────────────── */}
-      <Sequence from={0} durationInFrames={150}>
+      {/* ── Intro animation (≈5.7 s, matches MascotSystem stages) ── */}
+      <Sequence from={0} durationInFrames={170}>
         <Intro date={script.date} mascotMode />
       </Sequence>
 
@@ -102,7 +102,7 @@ export const NewsVideo: React.FC<VideoInputProps> = ({
       <MascotSystem
         timeline={timeline}
         totalFrames={totalFrames}
-        introEnd={150}
+        introEnd={170}
         outroStart={outroTimeline.from}
         introTitle="AI News Daily"
         introDate={script.date}

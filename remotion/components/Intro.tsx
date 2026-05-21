@@ -22,15 +22,11 @@ const formatDate = (date: string): string => {
 export const Intro: React.FC<IntroProps> = ({ date, mascotMode = false }) => {
   const frame = useCurrentFrame();
 
-  const opacity = interpolate(frame, [0, 30, 110, 150], [0, 1, 1, 0], {
+  const opacity = interpolate(frame, [0, 30, 150, 200], [0, 1, 1, 0], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
   const titleY = interpolate(frame, [10, 40], [24, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-  const subtitleOpacity = interpolate(frame, [25, 50], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
@@ -71,17 +67,6 @@ export const Intro: React.FC<IntroProps> = ({ date, mascotMode = false }) => {
           </div>
         </>
       )}
-      <div
-        style={{
-          color: "#92400e",
-          fontSize: 20,
-          marginTop: mascotMode ? 0 : 20,
-          opacity: subtitleOpacity,
-          letterSpacing: 1,
-        }}
-      >
-        Your daily AI intelligence briefing
-      </div>
     </AbsoluteFill>
   );
 };

@@ -1,7 +1,11 @@
 /**
  * collect-assets: Scan cache/assets/{date}/ for manually placed images.
  *
- * Convention: name images 01.jpg, 02.png, 03.webp … matching story order.
+ * Convention:
+ *   - Single image:  NN.ext           (e.g. 01.jpg, 02.png)
+ *   - Multi-image:   NN-MM.ext        (e.g. 01-01.jpg, 01-02.jpg, 01-03.png)
+ *   NN = story index (1-based), MM = image order within the story.
+ *   Multi-image stories play as a crossfade carousel in NewsSegmentScene.
  * Supported extensions: jpg, jpeg, png, webp, gif.
  *
  * Also prints each story's source URL so you know where to fetch images from.
@@ -61,7 +65,8 @@ function main(): void {
     const url = seg.sourceUrl ?? "(no URL)";
     console.log(`  [${idx}] ${seg.progressLabel}`);
     console.log(`       ${url}`);
-    console.log(`       → place image as: cache/assets/${date}/${idx}.jpg (or .png/.webp)\n`);
+    console.log(`       → single image: cache/assets/${date}/${idx}.jpg`);
+    console.log(`       → multi-image:  cache/assets/${date}/${idx}-01.jpg, ${idx}-02.jpg, …\n`);
   });
 
   // Scan image directory for numbered files
@@ -70,24 +75,38 @@ function main(): void {
     ? fs.readdirSync(imageDir).filter((f) => IMAGE_EXTS.has(path.extname(f).toLowerCase()))
     : [];
 
-  const byIndex = new Map<number, string>();
+  // Group files by story index. `NN.ext` is the lone image; `NN-MM.ext` is one
+  // of several in a carousel — sort by MM. If both shapes are present for the
+  // same story, the multi-image group wins (the lone NN.ext is ignored).
+  const single = new Map<number, string>();
+  const multi  = new Map<number, { order: number; path: string }[]>();
   for (const file of found) {
     const base = path.basename(file, path.extname(file));
-    const n = parseInt(base, 10);
-    if (!isNaN(n) && n >= 1) {
-      byIndex.set(n, path.join(imageDir, file).replace(/\\/g, "/"));
+    const full = path.join(imageDir, file).replace(/\\/g, "/");
+    const m = /^(\d+)(?:-(\d+))?$/.exec(base);
+    if (!m) continue;
+    const story = parseInt(m[1], 10);
+    if (!story || story < 1) continue;
+    if (m[2] !== undefined) {
+      const order = parseInt(m[2], 10);
+      const list = multi.get(story) ?? [];
+      list.push({ order, path: full });
+      multi.set(story, list);
+    } else {
+      single.set(story, full);
     }
   }
+  for (const list of multi.values()) list.sort((a, b) => a.order - b.order);
 
   // Build manifest — one entry per story segment
   const segments = script.segments.map((seg, i) => {
     const idx = i + 1;
-    const imagePath = byIndex.get(idx);
+    const group = multi.get(idx);
+    const lone  = single.get(idx);
+    const paths = group ? group.map((g) => g.path) : (lone ? [lone] : []);
     return {
       newsId: seg.newsId,
-      images: imagePath
-        ? [{ file: imagePath, source: "manual" as const, credit: null }]
-        : [],
+      images: paths.map((file) => ({ file, source: "manual" as const, credit: null })),
     };
   });
 
