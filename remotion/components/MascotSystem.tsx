@@ -30,84 +30,16 @@ const I_WAVE_F        = 30;   // duration of the word-wave (around the moment ho
 const I_ENTER_HOLE    = 18;   // horse opacity fade-out frames
 const I_HOLE_CLOSE    = 14;   // hole shrink-out frames after horse is gone
 
-// ─── OUTRO choreography (unchanged: simple walk + fade) ─────────────────────
-const WALK_F = 130;
-const HOLD_F = 20;
-const TRANSITION_F = 50;
+// ─── OUTRO choreography (no horse — just word-wave title) ──────────────────
+const O_WAVE_F      = 30;   // word-wave duration
+const O_HOLD_F      = 70;   // title stays static
+const O_FADE_OUT_F  = 30;   // title fades out
 
 // Lottie playback rate tunes step cadence to horizontal velocity. Lower = slower
 // stride cycle. Intro/outro horse moves fast across the canvas, progress horse
 // crawls along the bar at ~0.2px/frame so its animation must be much slower.
 const LOTTIE_RATE_INTRO    = 1.7;
 const LOTTIE_RATE_PROGRESS = 0.35;
-const LOTTIE_RATE_OUTRO    = 0.7;
-
-// Title geometry (centred horizontally)
-const TITLE_W_FRAC = 0.62; // 62% of canvas width
-
-interface RevealedTitleProps {
-  title: string;
-  subtitle?: string;
-  width: number;
-  height: number;
-  horseX: number;
-  titleStartX: number;
-  titleEndX: number;
-  textOpacity: number;
-}
-
-// Title text revealed left→right as the horse passes over its bounds.
-const RevealedTitle: React.FC<RevealedTitleProps> = ({
-  title, subtitle, width, height, horseX, titleStartX, titleEndX, textOpacity,
-}) => {
-  // Clip-right % goes 100 → 0 as horse moves from titleStartX → titleEndX.
-  const clipRightPct = interpolate(
-    horseX,
-    [titleStartX, titleEndX],
-    [100, 0],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
-  );
-  return (
-    <div
-      style={{
-        position: "absolute",
-        top: height / 2 - 60,
-        left: 0,
-        right: 0,
-        textAlign: "center",
-        opacity: textOpacity,
-        pointerEvents: "none",
-        clipPath: `inset(0 ${clipRightPct}% 0 0)`,
-        WebkitClipPath: `inset(0 ${clipRightPct}% 0 0)`,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 64,
-          fontWeight: 800,
-          color: "#1e293b",
-          letterSpacing: -1,
-          textShadow: "0 0 24px rgba(255,248,237,1), 0 0 48px rgba(255,248,237,0.9)",
-        }}
-      >
-        {title}
-      </div>
-      {subtitle && (
-        <div
-          style={{
-            fontSize: 22,
-            color: "#92400e",
-            marginTop: 12,
-            fontWeight: 500,
-            textShadow: "0 0 16px rgba(255,248,237,0.95)",
-          }}
-        >
-          {subtitle}
-        </div>
-      )}
-    </div>
-  );
-};
 
 const truncate = (s: string, n: number) =>
   s.length > n ? s.slice(0, n - 1) + "…" : s;
@@ -124,11 +56,6 @@ export const MascotSystem: React.FC<MascotSystemProps> = ({
   const frame = useCurrentFrame();
   const { width, height } = useVideoConfig();
   const globalProgress = frame / totalFrames;
-
-  // Title geometry shared by intro + outro
-  const titleW = width * TITLE_W_FRAC;
-  const titleStartX = (width - titleW) / 2;
-  const titleEndX = titleStartX + titleW;
 
   // ─── INTRO choreography ──────────────────────────────────────────────────
   // The horse traverses the canvas at constant speed over I_WALK_DURATION
@@ -242,35 +169,35 @@ export const MascotSystem: React.FC<MascotSystemProps> = ({
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
 
-  // ─── OUTRO: same animation pattern as intro, no breathing ────────────────
+  // ─── OUTRO: word-wave title only, no horse ───────────────────────────────
   //
   // Stages (relative to outroStart):
-  //   [outroStart .. outroStart+WALK_F]                walk: x = -MASCOT_L → introWalkEndX
-  //   [.. + HOLD_F]                                    hold, title fully revealed
-  //   [.. + TRANSITION_F]                              fade everything out
-  const outroWalkEnd = outroStart + WALK_F;
-  const outroHoldEnd = outroWalkEnd + HOLD_F;
-  const outroFadeEnd = outroHoldEnd + TRANSITION_F;
-  const outroWalkEndX = titleEndX + MASCOT_L * 0.3; // horse stops just past title's right edge
+  //   [outroStart           .. outroStart + O_WAVE_F]    words wave-in (per-word translateY + opacity)
+  //   [outroStart + O_WAVE_F .. outroHoldEnd]            title sits static
+  //   [outroHoldEnd          .. outroFadeEnd]            title fades out
+  const outroWaveEnd = outroStart + O_WAVE_F;
+  const outroHoldEnd = outroWaveEnd + O_HOLD_F;
+  const outroFadeEnd = outroHoldEnd + O_FADE_OUT_F;
 
-  const outroX = interpolate(
-    frame,
-    [outroStart, outroWalkEnd],
-    [-MASCOT_L, outroWalkEndX],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
-  );
-  const outroOpacity = interpolate(
-    frame,
-    [outroStart, outroStart + 6, outroHoldEnd, outroFadeEnd],
-    [0, 1, 1, 0],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
-  );
   const outroTitleOpacity = interpolate(
     frame,
-    [outroStart + 4, outroStart + 12, outroHoldEnd, outroFadeEnd - 5],
+    [outroStart, outroStart + 8, outroHoldEnd, outroFadeEnd],
     [0, 1, 1, 0],
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
+
+  const outroWords = outroTitle.split(" ");
+  const outroWordY = (i: number): number => {
+    const local = frame - outroStart - i * 8;
+    if (local < 0 || local > O_WAVE_F) return 0;
+    return -22 * Math.sin((local / O_WAVE_F) * Math.PI);
+  };
+  const outroWordOpacity = (i: number): number => {
+    const local = frame - outroStart - i * 8;
+    if (local <= 0) return 0;
+    if (local >= 14) return 1;
+    return local / 14;
+  };
 
   // ─── PROGRESS BAR segments ───────────────────────────────────────────────
   const segments = timeline.map((t) => {
@@ -381,34 +308,43 @@ export const MascotSystem: React.FC<MascotSystemProps> = ({
           />
         )}
 
-        {/* OUTRO horse — same direction, no breathing */}
+        {/* Outro title — centred, per-word wave-in, hold, fade out. No horse. */}
         {frame >= outroStart - 5 && frame < outroFadeEnd + 5 && (
           <div
             style={{
               position: "absolute",
-              left: outroX,
-              top: introWalkY,
-              width: MASCOT_L,
-              height: MASCOT_L,
-              opacity: outroOpacity,
-              filter: "drop-shadow(0 4px 18px rgba(0,0,0,0.15))",
+              top: height / 2 - 60,
+              left: 0,
+              right: 0,
+              textAlign: "center",
+              opacity: outroTitleOpacity,
+              pointerEvents: "none",
             }}
           >
-            <Lottie animationData={horseWalkData as LottieAnimationData} loop playbackRate={LOTTIE_RATE_OUTRO} />
+            <div
+              style={{
+                fontSize: 64,
+                fontWeight: 800,
+                color: "#1e293b",
+                letterSpacing: -1,
+                textShadow: "0 0 24px rgba(255,248,237,1), 0 0 48px rgba(255,248,237,0.9)",
+              }}
+            >
+              {outroWords.map((w, i) => (
+                <span
+                  key={i}
+                  style={{
+                    display: "inline-block",
+                    marginRight: "0.28em",
+                    opacity: outroWordOpacity(i),
+                    transform: `translateY(${outroWordY(i)}px)`,
+                  }}
+                >
+                  {w}
+                </span>
+              ))}
+            </div>
           </div>
-        )}
-
-        {/* Outro title — same reveal pattern */}
-        {frame >= outroStart - 5 && frame < outroFadeEnd + 5 && (
-          <RevealedTitle
-            title={outroTitle}
-            width={width}
-            height={height}
-            horseX={outroX + MASCOT_L / 2}
-            titleStartX={titleStartX}
-            titleEndX={titleEndX}
-            textOpacity={outroTitleOpacity}
-          />
         )}
       </AbsoluteFill>
 
