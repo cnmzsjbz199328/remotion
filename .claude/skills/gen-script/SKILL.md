@@ -127,19 +127,111 @@ and stop. Do not invent facts to fill the gap.
 
 ## TTS-safety
 
-The narration is read by a TTS engine. Avoid:
-- Markdown (`*`, `_`, `\``, `#`, …)
-- Square brackets, curly brackets
-- Emoji
-- Multiple consecutive punctuation marks (e.g. `……！！！`)
-- English acronyms longer than 4 letters without spelling them out
+The narration is rendered by a Chinese TTS engine. The engine handles flowing
+zh-CN well, but stumbles on (a) Arabic digits, (b) date / version strings, and
+(c) mid-sentence Latin↔CJK transitions. The rules below close those gaps —
+follow ALL of them or the audio will sound choppy.
+
+### Hard rule — no Arabic digits, ever
+
+All numbers, dates, years, percentages and units MUST be written in Chinese
+characters. The TTS pronounces "8000" inconsistently across renders, and may
+read it letter-by-letter as English. Examples of mandatory rewrites:
+
+| Wrong            | Right                              |
+|------------------|------------------------------------|
+| `8000 人`         | `八千人`                            |
+| `占全员 10%`       | `占全员百分之十`                       |
+| `300 亿美元`       | `三百亿美元`                          |
+| `5 月 19 日`       | `五月十九日`                          |
+| `2026 年`          | `二零二六年`                          |
+| `1150–1350 亿`     | `一千一百五十亿到一千三百五十亿`         |
+| `每月 100 美元`     | `每月一百美元`                        |
+| `第七轮`           | `第七轮`（already correct）            |
+
+If a fact requires precision past two decimal places (rare in news), prefer
+"约X" rounded form over reading a long digit sequence.
+
+### Company names — three-tier policy
+
+**Tier 1 — has a widely-known Chinese name → always use Chinese.**
+
+| English             | Chinese          |
+|---------------------|------------------|
+| Google / DeepMind   | 谷歌 / 谷歌深智   |
+| Microsoft           | 微软             |
+| NVIDIA              | 英伟达           |
+| Dell                | 戴尔             |
+| Intel               | 英特尔           |
+| AMD                 | 超微半导体       |
+| Apple               | 苹果             |
+| Amazon              | 亚马逊           |
+| Salesforce          | 赛富时           |
+| GIC                 | 新加坡政府投资公司 |
+| TSMC                | 台积电           |
+| Tencent             | 腾讯             |
+| Alibaba             | 阿里巴巴         |
+| ByteDance           | 字节跳动         |
+| Moonshot            | 月之暗面         |
+
+**Tier 2 — no settled Chinese name → first mention "中文功能指代 + 英文名",
+later mentions plain English.** For example:
+
+> "ChatGPT 母公司 OpenAI 与戴尔宣布合作……OpenAI 当前的代码助手……"
+
+> "Claude 母公司 Anthropic 完成新一轮融资……Anthropic 当前的年化收入……"
+
+Suggested first-mention frames:
+- OpenAI → `ChatGPT 母公司 OpenAI`
+- Anthropic → `Claude 母公司 Anthropic`
+- Meta → `原 Facebook 公司 Meta`
+- Mistral → `开源大模型公司 Mistral`
+- Sakana AI → `东京 AI 实验室 Sakana AI`
+
+**Tier 3 — speculative transliterations (欧鹏 / 安瑟普 / 米斯特拉尔)** → DO
+NOT use. The audience doesn't recognise them and the TTS pronunciation is
+worse than the plain English.
+
+### Product / model names
+
+Keep widely-known product names in English (`ChatGPT`, `Claude`, `Gemini`,
+`Codex`, `Copilot`, `Kimi`, `Qwen`, `DeepSeek`). They are short, well-trained
+in the TTS, and the audience expects them. **But version numbers attached to
+those names MUST become Chinese digits**:
+
+| Wrong              | Right                |
+|--------------------|----------------------|
+| `Gemini 3.5 Flash` | `Gemini 三点五 Flash` |
+| `GPT-5`            | `GPT 五`             |
+| `Qwen3`            | `Qwen 三`            |
+| `Vera Rubin NVL72` | `Vera Rubin NVL 七十二` |
+| `Claude 4.6`       | `Claude 四点六`       |
+
+### Acronyms
+
+- ≤4 letters and high-frequency (`AI`, `GPU`, `CPU`, `API`, `MoE`, `LLM`,
+  `SDK`, `CEO`, `EU`) → keep as-is.
+- 5+ letters or rare (`AGI`, `RLHF`, `MMLU`, `EBU R128`) → if avoidable, drop;
+  otherwise spell out the meaning in Chinese on first mention.
+
+### Other TTS hazards (legacy rules — still apply)
+
+- No Markdown (`*`, `_`, `\``, `#`, …)
+- No square brackets or curly brackets
+- No emoji
+- No consecutive punctuation marks (`……！！！`)
+- No URLs, email addresses, or file paths in the narration
 
 ## After running
 
 1. Re-open `cache/script-{date}.json` and read each segment aloud (mentally).
 2. Self-check the forbidden-phrasings list.
-3. Confirm intro / outro narration is EXACTLY the fixed boilerplate.
-4. Tell the user the script is ready and offer to run `/gen-tts`.
+3. Self-check the TTS-safety list — in particular grep the file for `\d` to
+   confirm no Arabic digit slipped past the digit-rewrite rule (allowed
+   exceptions: digits embedded inside product names like `GPT 五` where the
+   number is already in Chinese — but `GPT5` with raw digit is a violation).
+4. Confirm intro / outro narration is EXACTLY the fixed boilerplate.
+5. Tell the user the script is ready and offer to run `/gen-tts`.
 
 See [../render/cache-schema.md](../render/cache-schema.md) for the full JSON
 schema validated by render.

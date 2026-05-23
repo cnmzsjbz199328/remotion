@@ -12,7 +12,11 @@
       "Bash(npm run *)",
       "Bash(curl -s -o nul -w \"%{http_code} %{time_total}s\" --max-time 20 \"https://huggingface.co/spaces/tom199328/MOSS-TTS-Nano\")",
       "Bash(curl -s -L -o nul -w \"%{http_code} %{time_total}s\" --max-time 20 \"https://huggingface.co/spaces/tom199328/MOSS-TTS-Nano\")",
-      "Bash(curl -v --max-time 15 \"https://tom199328-moss-tts-nano.hf.space/\")"
+      "Bash(curl -v --max-time 15 \"https://tom199328-moss-tts-nano.hf.space/\")",
+      "WebFetch(domain:www.buildfastwithai.com)",
+      "WebFetch(domain:blog.mean.ceo)",
+      "WebFetch(domain:openrouter.ai)",
+      "WebFetch(domain:news.microsoft.com)"
     ]
   }
 }

@@ -7,9 +7,9 @@ import type { VideoInputProps, TtsManifest, AssetsManifest } from "./types";
 // absolute Windows paths from the deterministic skills (gen-tts, collect-assets);
 // Studio cannot serve `C:/…` directly, so we rewrite each path to staticFile()
 // form. `public/cache` is a junction → `./cache`, so cache/foo.png resolves.
-import scriptRaw from "../cache/script-2026-05-20.json";
-import ttsRaw    from "../cache/tts-manifest-2026-05-20.json";
-import assetsRaw from "../cache/assets-2026-05-20.json";
+import scriptRaw from "../cache/script-2026-05-23.json";
+import ttsRaw    from "../cache/tts-manifest-2026-05-23.json";
+import assetsRaw from "../cache/assets-2026-05-23.json";
 
 const FPS = 30;
 // Strip everything up to and including the first "cache/" segment (handles both
